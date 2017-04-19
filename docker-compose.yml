@@ -1,0 +1,10 @@
+version: "3"
+
+services:
+  cihm-cantaloupe:
+    build: .
+    image: cihm-cantaloupe:latest
+    ports:
+      - "8182:8182"
+    volumes:
+      - /repository:/repository
