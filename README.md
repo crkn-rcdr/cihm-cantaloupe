@@ -4,6 +4,6 @@ cihm-cantaloupe is Canadiana's [Cantaloupe][https://medusa-project.github.io/can
 
 ## Usage
 
-    $ docker-compose up --build
+      $ docker-compose up --build
 
 Sets up an instance of Cantaloupe on localhost, port 8182. Note that environment variable VERSION allows you to set the version of Cantaloupe you wish to install.
