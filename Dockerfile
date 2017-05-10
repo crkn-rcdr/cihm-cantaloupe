@@ -5,7 +5,7 @@ FROM openjdk:8-jdk-alpine
 ENV VERSION 3.3
 EXPOSE 8182
 
-RUN apk add --update curl
+RUN apk add --update curl openjpeg-tools
 
 RUN adduser -S cantaloupe
 
