@@ -5,11 +5,21 @@ FROM openjdk:8-jdk-alpine
 ENV VERSION 3.3
 EXPOSE 8182
 
-RUN apk add --update curl openjpeg-tools
+RUN apk add --update curl
+# Temporarily need to build, until fix in release -- see below...
+# openjpeg-tools
 
 RUN adduser -S cantaloupe
 
 WORKDIR /tmp
+
+RUN  apk add --update git libpng-dev tiff-dev lcms-dev doxygen cmake make g++ \
+  && git clone https://github.com/uclouvain/openjpeg.git \
+  && mkdir /tmp/openjpeg/build \
+  && cd /tmp/openjpeg/build \
+  && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+  && make install
+
 RUN  curl -OL "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
   && cd /usr/local \
