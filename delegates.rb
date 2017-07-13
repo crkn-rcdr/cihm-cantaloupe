@@ -1,6 +1,6 @@
 ##
 # Based on Sample Ruby script from Cantelope 3.3
-# This is a config file, and will later be deployed to servers via Puppet
+# This sets up Canadiana specific configuration
 ##
 require 'cgi'
 require 'zlib'
@@ -81,15 +81,14 @@ module Cantaloupe
     #                      given identifier, or nil if not found.
     #
     def self.get_pathname(identifier)
-      # Set by Puppet
-      repos = ['/repository/cihmz1/aip', '/repository/cihmz2/aip']
-
+      baserepo = '/repository/poolaip';
+      repolist = Dir.entries(baserepo);
       aip, partpath = CGI::unescape(identifier).split('/', 2);
       depositor, objid = aip.split('.')
       aip_hash = Zlib::crc32(aip).to_s[-3..-1]
       aip_path = nil;
-      repos.each do |path|
-        testpath = [path, depositor, aip_hash, aip].join("/")
+      repolist.each do |path|
+        testpath = [baserepo, path, depositor, aip_hash, aip].join("/")
         if File.directory?(testpath)
           aip_path = testpath
           break
