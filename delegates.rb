@@ -75,20 +75,21 @@ module Cantaloupe
 
   module FilesystemResolver
 
+    @@repository_base = ENV['REPOSITORY_BASE'] || '/repository/poolaip'
+    @@repository_list = Dir.entries(@@repository_base)
+
     ##
     # @param identifier [String] Image identifier
     # @return [String,nil] Absolute pathname of the image corresponding to the
     #                      given identifier, or nil if not found.
     #
     def self.get_pathname(identifier)
-      baserepo = '/repository/poolaip';
-      repolist = Dir.entries(baserepo);
-      aip, partpath = CGI::unescape(identifier).split('/', 2);
+      aip, partpath = CGI::unescape(identifier).split('/', 2)
       depositor, objid = aip.split('.')
       aip_hash = Zlib::crc32(aip).to_s[-3..-1]
       aip_path = nil;
-      repolist.each do |path|
-        testpath = [baserepo, path, depositor, aip_hash, aip].join("/")
+      @@repository_list.each do |path|
+        testpath = [@@repository_base, path, depositor, aip_hash, aip].join("/")
         if File.directory?(testpath)
           aip_path = testpath
           break
