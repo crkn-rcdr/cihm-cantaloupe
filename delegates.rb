@@ -1,11 +1,43 @@
 ##
-# Based on Sample Ruby script from Cantelope 3.3
+# Based on Sample Ruby script from Cantaloupe 3.3
 # This sets up Canadiana specific configuration
 ##
 require 'cgi'
+require 'uri'
 require 'zlib'
+require 'jwt'
+require 'json'
 
 module Cantaloupe
+  @@config = nil
+
+  def self.config
+    unless (@@config)
+      @@config = JSON.parse(File.read("/etc/config.json"))
+      @@config["repositoryList"] = Dir.entries(@@config["repositoryBase"]).grep_v(/^\.*$/)
+    end
+    @@config
+  end
+
+  def self.extractJwt(uri, cookies, headers)
+    query = CGI.parse(URI.parse(uri).query || '')
+    return (query["token"] ? query["token"][0] : nil) ||
+      cookies["c7a2_token"] ||
+      (headers["Authorization"] || "").match(/C7A2 (.+)/)[0] ||
+      nil
+  end
+
+  def self.validateJwt(token)
+    jwtData = nil
+    self.config["secrets"].each do |issuer, key|
+      begin
+        jwtData = JWT.decode(token, key, true)[0]
+        jwtData = nil if jwtData["iss"] != issuer
+      rescue
+      end
+    end
+    return jwtData
+  end
 
 ##
   # Tells the server whether the given request is authorized. Will be called
@@ -40,7 +72,21 @@ module Cantaloupe
   def self.authorized?(identifier, full_size, operations, resulting_size,
                        output_format, request_uri, request_headers, client_ip,
                        cookies)
-    true
+    jwt = self.extractJwt(request_uri, cookies, request_headers)
+    return false unless jwt
+    jwtData = self.validateJwt(jwt)
+    return false unless jwtData
+
+    if (jwtData["derivativeFiles"])
+      return false unless identifier.match jwtData["derivativeFiles"]
+    end
+    if (jwtData["maxDimension"])
+      resulting_size.values.each do |dimension|
+        return false if dimension > jwtData["maxDimension"]
+      end
+    end
+
+    return true
   end
 
   ##
@@ -75,9 +121,6 @@ module Cantaloupe
 
   module FilesystemResolver
 
-    @@repository_base = ENV['REPOSITORY_BASE'] || '/repository/poolaip'
-    @@repository_list = Dir.entries(@@repository_base)
-
     ##
     # @param identifier [String] Image identifier
     # @return [String,nil] Absolute pathname of the image corresponding to the
@@ -88,8 +131,8 @@ module Cantaloupe
       depositor, objid = aip.split('.')
       aip_hash = Zlib::crc32(aip).to_s[-3..-1]
       aip_path = nil;
-      @@repository_list.each do |path|
-        testpath = [@@repository_base, path, depositor, aip_hash, aip].join("/")
+      Cantaloupe.config["repositoryList"].each do |path|
+        testpath = [Cantaloupe.config["repositoryBase"], path, depositor, aip_hash, aip].join("/")
         if File.directory?(testpath)
           aip_path = testpath
           break

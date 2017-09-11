@@ -19,7 +19,7 @@ RUN  apk add --update curl ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
   && fc-cache -f \
   && echo 'gem: --no-document' >> /etc/gemrc \
-  && gem install jwt
+  && gem install jwt json_pure
 
 RUN  curl -OL "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
@@ -31,13 +31,14 @@ RUN  curl -OL "https://github.com/medusa-project/cantaloupe/releases/download/v$
 
 RUN adduser -S cantaloupe
 
-COPY cantaloupe.properties delegates.rb /etc/
+COPY cantaloupe.properties delegates.rb config.json /etc/
 RUN  mkdir -p /var/log/cantaloupe \
   && mkdir -p /var/cache/cantaloupe \
   && chown -R cantaloupe /var/log/cantaloupe \
   && chown -R cantaloupe /var/cache/cantaloupe \
   && chown cantaloupe /etc/cantaloupe.properties \
-  && chown cantaloupe /etc/delegates.rb
+  && chown cantaloupe /etc/delegates.rb \
+  && chown cantaloupe /etc/config.json
 
 USER cantaloupe
 
