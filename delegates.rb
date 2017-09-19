@@ -73,16 +73,30 @@ module Cantaloupe
                        output_format, request_uri, request_headers, client_ip,
                        cookies)
     jwt = self.extractJwt(request_uri, cookies, request_headers)
-    return false unless jwt
+    unless (jwt)
+      puts "JWT could not be extracted from request."
+      return false
+    end
+
     jwtData = self.validateJwt(jwt)
-    return false unless jwtData
+    unless (jwtData)
+      puts "JWT could not be validated."
+      return false
+    end
 
     if (jwtData["derivativeFiles"])
-      return false unless identifier.match jwtData["derivativeFiles"]
+      unless (identifier.match jwtData["derivativeFiles"])
+        puts "Derivative image requested that was not allowed by the 'derivativeFiles' condition."
+        return false
+      end
     end
+
     if (jwtData["maxDimension"])
       resulting_size.values.each do |dimension|
-        return false if dimension > jwtData["maxDimension"]
+        if dimension > jwtData["maxDimension"]
+          puts "Derivative image requested beyond maximum dimension bound."
+          return false
+        end
       end
     end
 
