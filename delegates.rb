@@ -29,13 +29,34 @@ module Cantaloupe
 
   def self.validateJwt(token)
     jwtData = nil
-    self.config["secrets"].each do |issuer, key|
-      begin
-        jwtData = JWT.decode(token, key, true)[0]
-        jwtData = nil if jwtData["iss"] != issuer
-      rescue
-      end
+
+    begin
+      jwtData = JWT.decode(token, nil, false)[0]
+    rescue JWT::DecodeError => e
+      puts "JWT Decode error: #{e.message}"
+      return nil
     end
+
+    issuer = jwtData["iss"]
+    unless (issuer)
+      puts "JWT must indicate issuer in payload."
+      return nil
+    end
+
+    signingKey = self.config["secrets"][issuer]
+    unless (signingKey)
+      puts "JWT cannot be decoded with unknown issuer '#{issuer}'."
+      return nil
+    end
+
+    jwtData = nil
+    begin
+      jwtData = JWT.decode(token, signingKey, true, { :algorithm => 'HS256' })[0]
+    rescue JWT::DecodeError => e
+      puts "JWT Decode error: #{e.message}"
+      return nil
+    end
+
     return jwtData
   end
 
@@ -74,19 +95,19 @@ module Cantaloupe
                        cookies)
     jwt = self.extractJwt(request_uri, cookies, request_headers)
     unless (jwt)
-      puts "JWT could not be extracted from request."
+      puts "Unauthorized: JWT could not be extracted from request."
       return false
     end
 
     jwtData = self.validateJwt(jwt)
     unless (jwtData)
-      puts "JWT could not be validated."
+      puts "Unauthorized: JWT could not be validated."
       return false
     end
 
     if (jwtData["derivativeFiles"])
       unless (identifier.match jwtData["derivativeFiles"])
-        puts "Derivative image requested that was not allowed by the 'derivativeFiles' condition."
+        puts "Unauthorized: Derivative image requested that was not allowed by the 'derivativeFiles' condition."
         return false
       end
     end
@@ -94,7 +115,7 @@ module Cantaloupe
     if (jwtData["maxDimension"])
       resulting_size.values.each do |dimension|
         if dimension > jwtData["maxDimension"]
-          puts "Derivative image requested beyond maximum dimension bound."
+          puts "Unauthorized: Derivative image requested beyond maximum dimension bound."
           return false
         end
       end
