@@ -112,14 +112,16 @@ module Cantaloupe
       end
     end
 
-    if (jwtData["maxDimension"])
-      resulting_size.values.each do |dimension|
-        if dimension > jwtData["maxDimension"]
-          puts "Unauthorized: Derivative image requested beyond maximum dimension bound."
-          return false
-        end
-      end
-    end
+    # disabling this check until issue with resulting_size is fixed
+    # https://github.com/medusa-project/cantaloupe/issues/151
+    # if (jwtData["maxDimension"])
+    #   resulting_size.values.each do |dimension|
+    #     if dimension > jwtData["maxDimension"]
+    #       puts "Unauthorized: Derivative image requested beyond maximum dimension bound."
+    #       return false
+    #     end
+    #   end
+    # end
 
     return true
   end
