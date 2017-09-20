@@ -21,9 +21,11 @@ module Cantaloupe
 
   def self.extractJwt(uri, cookies, headers)
     query = CGI.parse(URI.parse(uri).query || '')
+    header_match = headers["Authorization"].match(/C7A2 (.+)/) if headers["Authorization"]
+
     return (query["token"] ? query["token"][0] : nil) ||
       cookies["c7a2_token"] ||
-      (headers["Authorization"] || "").match(/C7A2 (.+)/)[0] ||
+      (header_match ? header_match[0] : nil) ||
       nil
   end
 
