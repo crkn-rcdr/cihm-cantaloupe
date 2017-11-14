@@ -2,7 +2,7 @@
 
 FROM openjdk:8-jdk-alpine
 
-ENV VERSION 3.3.2
+ENV VERSION 3.3.3
 EXPOSE 8182
 
 WORKDIR /tmp
