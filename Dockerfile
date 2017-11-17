@@ -1,8 +1,8 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-FROM openjdk:8-jdk-alpine
+FROM openjdk:8u131-jdk-alpine
 
-ENV VERSION 3.3.3
+ENV VERSION 3.3.4
 EXPOSE 8182
 
 WORKDIR /tmp
