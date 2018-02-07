@@ -165,7 +165,7 @@ module Cantaloupe
     # @return [String,nil] Absolute pathname of the image corresponding to the
     #                      given identifier, or nil if not found.
     #
-    def self.get_pathname(identifier)
+    def self.get_pathname(identifier, context)
       aip, partpath = CGI::unescape(identifier).split('/', 2)
       depositor, objid = aip.split('.')
       aip_hash = Zlib::crc32(aip).to_s[-3..-1]
