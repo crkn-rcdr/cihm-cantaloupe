@@ -52,4 +52,4 @@ USER cantaloupe
 
 ENV GEM_HOME /usr/lib/ruby/gems/2.4.0
 
-CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx2g -jar /usr/local/cantaloupe/Cantaloupe-$VERSION.war"]
+CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx4g -jar /usr/local/cantaloupe/Cantaloupe-$VERSION.war"]
