@@ -1,8 +1,9 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
+#FROM openjdk:8u171-jdk-alpine3.8
 FROM openjdk:8u131-jdk-alpine
 
-ENV VERSION 3.4.1
+ENV VERSION 3.4.4
 EXPOSE 8182
 
 WORKDIR /tmp
@@ -41,7 +42,7 @@ RUN  mkdir -p /var/log/cantaloupe \
   && chown cantaloupe /etc/config.json
 
 # Needed to make local copy from http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
-RUN curl -OL "http://feta.office.c7a.ca/deploy/jai-1_1_2_01-lib-linux-i586.tar.gz" \
+RUN curl -OL "http://feta.tor.c7a.ca/deploy/jai-1_1_2_01-lib-linux-i586.tar.gz" \
   && tar -xvzpf jai-1_1_2_01-lib-linux-i586.tar.gz
 
 ENV JAIHOME /tmp/jai-1_1_2_01/lib
