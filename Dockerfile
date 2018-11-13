@@ -1,9 +1,8 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-#FROM openjdk:8u171-jdk-alpine3.8
-FROM openjdk:8u131-jdk-alpine
+FROM openjdk:8u181-alpine
 
-ENV VERSION 3.4.4
+ENV VERSION 4.0.2
 EXPOSE 8182
 
 WORKDIR /tmp
@@ -18,15 +17,21 @@ RUN  apk add --update git libpng-dev tiff-dev lcms-dev doxygen cmake make g++ \
 
 RUN  apk add --update curl ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
-  && fc-cache -f \
-  && echo 'gem: --no-document' >> /etc/gemrc \
-  && gem install jwt json_pure
+  && fc-cache -f
+
+# Needed to make local copy from http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
+RUN curl -OL "http://feta.tor.c7a.ca/deploy/jai-1_1_2_01-lib-linux-i586.tar.gz" \
+  && tar -xvzpf jai-1_1_2_01-lib-linux-i586.tar.gz
+
+ENV JAIHOME /tmp/jai-1_1_2_01/lib
+ENV CLASSPATH $JAIHOME/jai_core.jar:$JAIHOME/jai_codec.jar:$JAIHOME/mlibwrapper_jai.jar:$CLASSPATH
+ENV LD_LIBRARY_PATH .:$JAIHOME:$CLASSPATH
 
 RUN  curl -OL "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
   && cd /usr/local \
   && unzip /tmp/Cantaloupe-$VERSION.zip \
-  && ln -s Cantaloupe-$VERSION cantaloupe \
+  && ln -s cantaloupe-$VERSION cantaloupe \
   && rm -rf /tmp/Cantaloupe-$VERSION \
   && rm /tmp/Cantaloupe-$VERSION.zip
 
@@ -41,16 +46,11 @@ RUN  mkdir -p /var/log/cantaloupe \
   && chown cantaloupe /etc/delegates.rb \
   && chown cantaloupe /etc/config.json
 
-# Needed to make local copy from http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
-RUN curl -OL "http://feta.tor.c7a.ca/deploy/jai-1_1_2_01-lib-linux-i586.tar.gz" \
-  && tar -xvzpf jai-1_1_2_01-lib-linux-i586.tar.gz
-
-ENV JAIHOME /tmp/jai-1_1_2_01/lib
-ENV CLASSPATH $JAIHOME/jai_core.jar:$JAIHOME/jai_codec.jar:$JAIHOME/mlibwrapper_jai.jar:$CLASSPATH
-ENV LD_LIBRARY_PATH .:$JAIHOME:$CLASSPATH
-
 USER cantaloupe
 
-ENV GEM_HOME /usr/lib/ruby/gems/2.4.0
+RUN  gem install --no-document --install-dir /tmp/gems jwt json_pure
 
-CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx4g -jar /usr/local/cantaloupe/Cantaloupe-$VERSION.war"]
+ENV GEM_HOME /tmp/gems
+
+CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx4g -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
+
