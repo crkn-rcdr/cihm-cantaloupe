@@ -17,9 +17,7 @@ RUN  apk add --update git libpng-dev tiff-dev lcms-dev doxygen cmake make g++ \
 
 RUN  apk add --update curl ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
-  && fc-cache -f \
-  && echo 'gem: --no-document' >> /etc/gemrc \
-  && gem install jwt json_pure
+  && fc-cache -f
 
 # Needed to make local copy from http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
 RUN curl -OL "http://feta.tor.c7a.ca/deploy/jai-1_1_2_01-lib-linux-i586.tar.gz" \
@@ -50,7 +48,9 @@ RUN  mkdir -p /var/log/cantaloupe \
 
 USER cantaloupe
 
-ENV GEM_HOME /usr/lib/ruby/gems/2.4.0
+RUN  gem install --no-document --install-dir /tmp/gems jwt json_pure
+
+ENV GEM_HOME /tmp/gems
 
 CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx4g -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
 
