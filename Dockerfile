@@ -7,15 +7,7 @@ EXPOSE 8182
 
 WORKDIR /tmp
 
-# Temporary build of fixed openjpeg-tools
-RUN  apk add --update git libpng-dev tiff-dev lcms-dev doxygen cmake make g++ \
-  && git clone --branch v2.3.0 --single-branch --depth 1 https://github.com/uclouvain/openjpeg.git \
-  && mkdir /tmp/openjpeg/build \
-  && cd /tmp/openjpeg/build \
-  && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
-  && make install && rm -rf /tmp/openjpeg
-
-RUN  apk add --update curl ruby msttcorefonts-installer fontconfig \
+RUN  apk add --update curl openjpeg ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
   && fc-cache -f
 
