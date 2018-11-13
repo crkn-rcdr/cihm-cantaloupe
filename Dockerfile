@@ -1,7 +1,6 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-#FROM openjdk:8u171-jdk-alpine3.8
-FROM openjdk:8u131-jdk-alpine
+FROM openjdk:8u181-alpine
 
 ENV VERSION 4.0.2
 EXPOSE 8182
@@ -54,4 +53,4 @@ USER cantaloupe
 ENV GEM_HOME /usr/lib/ruby/gems/2.4.0
 
 CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx4g -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
-#CMD tail -f /dev/null
+
