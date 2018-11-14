@@ -7,7 +7,7 @@ EXPOSE 8182
 
 WORKDIR /tmp
 
-RUN  apk add --update curl openjpeg ruby msttcorefonts-installer fontconfig \
+RUN  apk add --update curl openjpeg-tools ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
   && fc-cache -f
 
