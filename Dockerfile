@@ -44,5 +44,5 @@ RUN  gem install --no-document --install-dir /tmp/gems jwt json_pure
 
 ENV GEM_HOME /tmp/gems
 
-CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx4g -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
+CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx16g -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
 
