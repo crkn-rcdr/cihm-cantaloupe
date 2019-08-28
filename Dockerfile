@@ -10,9 +10,10 @@ RUN apk add --update curl openjpeg-tools ruby msttcorefonts-installer fontconfig
   && update-ms-fonts \
   && fc-cache -f
 
-# Needed to make local copy from http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
-RUN curl -OL "http://pinto.c7a.ca/deploy/jai-1_1_2_01-lib-linux-i586.tar.gz" \
-  && tar -xvzpf jai-1_1_2_01-lib-linux-i586.tar.gz
+# You need to download a local copy of the Java Advanced Imaging API 1.1.2_01
+# http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
+COPY jai-1_1_2_01-lib-linux-i586.tar.gz /tmp
+RUN tar -xvzpf jai-1_1_2_01-lib-linux-i586.tar.gz
 
 ENV JAIHOME=/tmp/jai-1_1_2_01/lib \
   CLASSPATH=$JAIHOME/jai_core.jar:$JAIHOME/jai_codec.jar:$JAIHOME/mlibwrapper_jai.jar:$CLASSPATH \
