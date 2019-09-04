@@ -1,8 +1,8 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-FROM openjdk:8u181-alpine
+FROM openjdk:8u191-alpine
 
-ENV VERSION 4.1.2
+ENV VERSION 4.1.3
 
 WORKDIR /tmp
 
