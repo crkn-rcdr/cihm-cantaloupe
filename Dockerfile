@@ -1,6 +1,6 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-FROM openjdk:8u191-alpine
+FROM alpine:3.10
 
 WORKDIR /tmp
 
@@ -10,15 +10,15 @@ ENV VERSION=4.1.3 \
   LD_LIBRARY_PATH=.:$JAIHOME:$CLASSPATH \
   GEM_HOME=/tmp/gems
 
-RUN apk add --update wget openjpeg-tools ruby msttcorefonts-installer fontconfig \
+RUN apk --no-cache add openjdk11-jre wget openjpeg-tools ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
   && fc-cache -f \
   # See https://github.com/exo-docker/exo/blob/master/Dockerfile#L99
   && wget -nv -q --no-cookies --no-check-certificate \
   --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" \
   -O "/tmp/jai.tar.gz" "http://download.oracle.com/otn-pub/java/jai/1.1.2_01-fcs/jai-1_1_2_01-lib-linux-i586.tar.gz" \
-  && tar -xvzpf jai.tar.gz \
-  && wget "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
+  && tar -xzpf jai.tar.gz \
+  && wget -nv "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
   && cd /usr/local \
   && unzip /tmp/Cantaloupe-$VERSION.zip \
