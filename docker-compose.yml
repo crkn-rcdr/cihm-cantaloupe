@@ -8,7 +8,6 @@ services:
       CIHM_CANTALOUPE: 'cantaloupe:8182'
     depends_on:
       - cantaloupe
-      - cookie-authorizer
     ports:
       - "80:80"
   cantaloupe:
@@ -23,7 +22,3 @@ services:
     # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
     # - JWT_ISSUER=CAP
     # - JWT_SECRET=capjwtsecret
-  cookie-authorizer:
-    build: cihm-cookie-authorizer/
-    image: cihm-cookie-authorizer
-    command: yarn run start

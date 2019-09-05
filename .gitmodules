@@ -1,3 +1,0 @@
-[submodule "cihm-cookie-authorizer"]
-	path = cihm-cookie-authorizer
-	url = git@github.com:crkn-rcdr/cihm-cookie-authorizer.git
