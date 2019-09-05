@@ -1,6 +1,6 @@
 # cihm-cantaloupe
 
-`cihm-cantaloupe` is Canadiana's [Cantaloupe](https://medusa-project.github.io/cantaloupe/) configuration.
+`cihm-cantaloupe` is Canadiana's [Cantaloupe](https://cantaloupe-project.github.io/) configuration.
 
 ## configuration
 
