@@ -10,4 +10,4 @@ Expected environment variables can be found in `docker-compose.yml`.
 
       $ docker-compose up --build
 
-Sets up an instance of Cantaloupe on localhost, port 8182.
+Sets up an instance of Cantaloupe and Apache, listening on *:80.
