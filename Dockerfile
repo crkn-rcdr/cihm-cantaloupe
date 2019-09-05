@@ -2,39 +2,36 @@
 
 FROM openjdk:8u191-alpine
 
-ENV VERSION 4.1.3
-
 WORKDIR /tmp
 
-RUN apk add --update curl openjpeg-tools ruby msttcorefonts-installer fontconfig \
-  && update-ms-fonts \
-  && fc-cache -f
-
-# You need to download a local copy of the Java Advanced Imaging API 1.1.2_01
-# http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-java-client-419417.html
-COPY jai-1_1_2_01-lib-linux-i586.tar.gz /tmp
-RUN tar -xvzpf jai-1_1_2_01-lib-linux-i586.tar.gz
-
-ENV JAIHOME=/tmp/jai-1_1_2_01/lib \
+ENV VERSION=4.1.3 \
+  JAIHOME=/tmp/jai-1_1_2_01/lib \
   CLASSPATH=$JAIHOME/jai_core.jar:$JAIHOME/jai_codec.jar:$JAIHOME/mlibwrapper_jai.jar:$CLASSPATH \
   LD_LIBRARY_PATH=.:$JAIHOME:$CLASSPATH \
   GEM_HOME=/tmp/gems
 
-RUN curl -OL "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
+RUN apk add --update wget openjpeg-tools ruby msttcorefonts-installer fontconfig \
+  && update-ms-fonts \
+  && fc-cache -f \
+  # See https://github.com/exo-docker/exo/blob/master/Dockerfile#L99
+  && wget -nv -q --no-cookies --no-check-certificate \
+  --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" \
+  -O "/tmp/jai.tar.gz" "http://download.oracle.com/otn-pub/java/jai/1.1.2_01-fcs/jai-1_1_2_01-lib-linux-i586.tar.gz" \
+  && tar -xvzpf jai.tar.gz \
+  && wget "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
   && cd /usr/local \
   && unzip /tmp/Cantaloupe-$VERSION.zip \
   && ln -s cantaloupe-$VERSION cantaloupe \
   && rm -rf /tmp/Cantaloupe-$VERSION \
-  && rm /tmp/Cantaloupe-$VERSION.zip
-
-RUN addgroup -S cantaloupe --gid 8182 && adduser -S cantaloupe --uid 8182 -G cantaloupe
-COPY --chown=cantaloupe:cantaloupe cantaloupe.properties delegates.rb /etc/
-
-RUN mkdir -p /var/log/cantaloupe \
+  && rm /tmp/Cantaloupe-$VERSION.zip \
+  && addgroup -S cantaloupe --gid 8182 && adduser -S cantaloupe --uid 8182 -G cantaloupe \
+  && mkdir -p /var/log/cantaloupe \
   && mkdir -p /var/cache/cantaloupe \
   && chown -R cantaloupe:cantaloupe /var/log/cantaloupe \
   && chown -R cantaloupe:cantaloupe /var/cache/cantaloupe
+
+COPY --chown=cantaloupe:cantaloupe cantaloupe.properties delegates.rb /etc/
 
 USER cantaloupe
 
