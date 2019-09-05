@@ -4,22 +4,11 @@
 
 require 'cgi'
 require 'uri'
-require 'zlib'
 require 'jwt'
 require 'json'
 
 class CustomDelegate
   attr_accessor :context
-
-  @config = nil
-
-  def self.config
-    unless (@config)
-      @config = JSON.parse(File.read("/etc/config.json"))
-      @config["repositoryList"] = Dir.entries(@config["repositoryBase"]).grep_v(/^\.*$/)
-    end
-    @config
-  end
 
   def extractJwt
     query = CGI.parse(URI.parse(context["request_uri"]).query || '')
@@ -42,14 +31,14 @@ class CustomDelegate
     end
 
     issuer = jwtData["iss"]
-    unless (issuer)
+    unless (issuer && issuer == ENV["JWT_ISSUER"])
       puts "JWT must indicate issuer in payload."
       return nil
     end
 
-    signingKey = self.class.config["secrets"][issuer]
+    signingKey = ENV["JWT_SECRET"]
     unless (signingKey)
-      puts "JWT cannot be decoded with unknown issuer '#{issuer}'."
+      puts "JWT cannot be decoded with #{issuer}'s secret key."
       return nil
     end
 
@@ -64,10 +53,7 @@ class CustomDelegate
     return jwtData
   end
 
-  def redirect(options = {})
-  end
-
-  def authorized?(options = {})
+  def authorize(options = {})
     jwt = self.extractJwt
 
     unless (jwt)
@@ -103,20 +89,6 @@ class CustomDelegate
   end
 
   def filesystemsource_pathname(options = {})
-    aip, partpath = CGI::unescape(context["identifier"]).split('/', 2)
-    depositor, objid = aip.split('.')
-    aip_hash = Zlib::crc32(aip).to_s[-3..-1]
-    aip_path = nil;
-    self.class.config["repositoryList"].each do |path|
-      testpath = [self.class.config["repositoryBase"], path, depositor, aip_hash, aip].join("/")
-      if File.directory?(testpath)
-        aip_path = testpath
-        break
-      end
-    end
-    return nil unless aip_path
-    # Note: For anything beyond a test script, don't trust 'partpath' (check for ../)
-    return [aip_path, partpath].join("/") 
   end
 
   def httpsource_resource_info(options = {})

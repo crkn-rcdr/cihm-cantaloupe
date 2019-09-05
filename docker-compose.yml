@@ -1,12 +1,24 @@
 version: "3"
 
 services:
-  cihm-cantaloupe:
-    build: .
+  cantaloupe-apache:
+    build: apache/
+    image: cantaloupe-apache
     environment:
-      - REPOSITORY_BASE
-    image: cihm-cantaloupe:latest
+      CIHM_CANTALOUPE: 'cantaloupe:8182'
+    depends_on:
+      - cantaloupe
     ports:
-      - "8182:8182"
-    volumes:
-      - /repository:/repository
+      - "80:80"
+  cantaloupe:
+    build: .
+    image: cihm-cantaloupe
+    #ports:
+    #  - "8182:8182"
+    # environment:
+    # - S3SOURCE_ENDPOINT=https://swifts3.endpoint/
+    # - S3SOURCE_ACCESS_KEY_ID=swiftuser
+    # - S3SOURCE_SECRET_KEY=swifts3secret
+    # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
+    # - JWT_ISSUER=CAP
+    # - JWT_SECRET=capjwtsecret
