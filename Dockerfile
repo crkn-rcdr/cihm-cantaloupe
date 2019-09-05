@@ -28,7 +28,7 @@ RUN curl -OL "https://github.com/medusa-project/cantaloupe/releases/download/v$V
   && rm -rf /tmp/Cantaloupe-$VERSION \
   && rm /tmp/Cantaloupe-$VERSION.zip
 
-RUN addgroup -S cantaloupe && adduser -S cantaloupe -G cantaloupe
+RUN addgroup -S cantaloupe --gid 8182 && adduser -S cantaloupe --uid 8182 -G cantaloupe
 COPY --chown=cantaloupe:cantaloupe cantaloupe.properties delegates.rb /etc/
 
 RUN mkdir -p /var/log/cantaloupe \
