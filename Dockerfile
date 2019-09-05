@@ -42,5 +42,5 @@ RUN gem install --no-document --install-dir /tmp/gems jwt json_pure
 
 EXPOSE 8182
 
-CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -Xmx16g -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
+CMD ["sh", "-c", "java -Dcantaloupe.config=/etc/cantaloupe.properties -Dcom.sun.media.jai.disableMediaLib=true -jar /usr/local/cantaloupe/cantaloupe-$VERSION.war"]
 
