@@ -8,9 +8,10 @@ ENV VERSION=4.1.3 \
   JAIHOME=/tmp/jai-1_1_2_01/lib \
   CLASSPATH=$JAIHOME/jai_core.jar:$JAIHOME/jai_codec.jar:$JAIHOME/mlibwrapper_jai.jar:$CLASSPATH \
   LD_LIBRARY_PATH=.:$JAIHOME:$CLASSPATH \
-  GEM_HOME=/tmp/gems
+  GEM_HOME=/tmp/gems \
+  JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
-RUN apk --no-cache add openjdk11-jre wget openjpeg-tools ruby msttcorefonts-installer fontconfig \
+RUN apk --no-cache add openjdk11 wget openjpeg-tools ruby msttcorefonts-installer fontconfig \
   && update-ms-fonts \
   && fc-cache -f \
   # See https://github.com/exo-docker/exo/blob/master/Dockerfile#L99
@@ -30,6 +31,22 @@ RUN apk --no-cache add openjdk11-jre wget openjpeg-tools ruby msttcorefonts-inst
   && mkdir -p /var/cache/cantaloupe \
   && chown -R cantaloupe:cantaloupe /var/log/cantaloupe \
   && chown -R cantaloupe:cantaloupe /var/cache/cantaloupe
+
+# https://github.com/crkn-rcdr/cihm-cantaloupe/issues/15
+RUN cd /tmp && apk add --virtual build-dependencies cmake g++ make nasm \
+    && wget https://downloads.sourceforge.net/project/libjpeg-turbo/2.0.3/libjpeg-turbo-2.0.3.tar.gz \
+    && tar -xpf libjpeg-turbo-2.0.3.tar.gz \
+    && cd libjpeg-turbo-2.0.3 \
+    && cmake \
+       -DCMAKE_INSTALL_PREFIX=/usr \
+       -DCMAKE_INSTALL_LIBDIR=/usr/lib \
+       -DBUILD_SHARED_LIBS=True \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DCMAKE_C_FLAGS="$CFLAGS" \
+       -DWITH_JPEG8=1 \
+       -DWITH_JAVA=1 \
+    && make && make install \
+    && apk del build-dependencies
 
 COPY --chown=cantaloupe:cantaloupe cantaloupe.properties delegates.rb /etc/
 
