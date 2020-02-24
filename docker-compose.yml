@@ -1,18 +1,12 @@
 version: "3"
 
 services:
-  cantaloupe-apache:
-    build: apache/
-    image: cantaloupe-apache
-    environment:
-      CIHM_CANTALOUPE: 'cantaloupe:8182'
-    depends_on:
-      - cantaloupe
-    ports:
-      - "80:80"
   cantaloupe:
     build: .
     image: cihm-cantaloupe
+    networks:
+      access-platform:
+        ipv4_address: 172.30.0.5
     #ports:
     #  - "8182:8182"
     # environment:
@@ -22,3 +16,6 @@ services:
     # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
     # - JWT_ISSUER=CAP
     # - JWT_SECRET=capjwtsecret
+networks:
+  access-platform:
+    external: true

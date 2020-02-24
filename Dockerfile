@@ -35,7 +35,7 @@ RUN cd /tmp && apk add --virtual build-dependencies cmake g++ make nasm \
   && make && make install \
   && apk del build-dependencies
 
-ENV VERSION=4.1.4
+ENV VERSION=4.1.5
 
 RUN wget -nv "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \
