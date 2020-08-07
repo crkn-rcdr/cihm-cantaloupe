@@ -12,10 +12,12 @@ class CustomDelegate
 
   def extractJwt
     query = CGI.parse(URI.parse(context["request_uri"]).query || '')
-    header_match = context["request_headers"]["Authorization"].match(/C7A2 (.+)/) if context["request_headers"]["Authorization"]
+    # there's a bug in Cantaloupe 4 that doesn't generate the context["cookies"] hash in the way you'd expect; here's the fix
+    cookies = context["cookies"]["Cookie"].split("; ").map { |kv| kv.split("=", -1) }.to_h
+    header_match = context["request_headers"]["Authorization"].match(/Bearer (.+)/) if context["request_headers"]["Authorization"]
 
     return (query["token"] ? query["token"][0] : nil) ||
-      context["cookies"]["c7a2_token"] ||
+      cookies["auth_token"] ||
       (header_match ? header_match[0] : nil) ||
       nil
   end
@@ -31,12 +33,17 @@ class CustomDelegate
     end
 
     issuer = jwtData["iss"]
-    unless (issuer && issuer == ENV["JWT_ISSUER"])
+    unless (issuer)
       puts "JWT must indicate issuer in payload."
       return nil
     end
 
-    signingKey = ENV["JWT_SECRET"]
+    if (issuer == "CAP")
+      signingKey = ENV["CAP_JWT_SECRET"]
+    elsif (/https:\/\/auth.*\.canadiana\.ca\//.match(issuer))
+      signingKey = ENV["AUTH_JWT_SECRET"]
+    end
+
     unless (signingKey)
       puts "JWT cannot be decoded with #{issuer}'s secret key."
       return nil

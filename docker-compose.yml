@@ -14,8 +14,8 @@ services:
     # - S3SOURCE_ACCESS_KEY_ID=swiftuser
     # - S3SOURCE_SECRET_KEY=swifts3secret
     # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
-    # - JWT_ISSUER=CAP
-    # - JWT_SECRET=capjwtsecret
+    # - CAP_JWT_SECRET=capjwtsecret
+    # - AUTH_JWT_SECRET=authjwtsecret
 networks:
   access-platform:
     external: true
