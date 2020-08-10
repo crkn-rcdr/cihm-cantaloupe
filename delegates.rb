@@ -13,7 +13,7 @@ class CustomDelegate
   def extractJwt
     query = CGI.parse(URI.parse(context["request_uri"]).query || '')
     # there's a bug in Cantaloupe 4 that doesn't generate the context["cookies"] hash in the way you'd expect; here's the fix
-    cookies = context["cookies"]["Cookie"].split("; ").map { |kv| kv.split("=", -1) }.to_h
+    cookies = context["cookies"]["Cookie"].split("; ").map { |kv| kv.split("=", 2) }.to_h
     header_match = context["request_headers"]["Authorization"].match(/Bearer (.+)/) if context["request_headers"]["Authorization"]
 
     return (query["token"] ? query["token"][0] : nil) ||
