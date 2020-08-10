@@ -14,7 +14,7 @@ class CustomDelegate
     cookieval = nil
     query = CGI.parse(URI.parse(context["request_uri"]).query || '')
     # there's a bug in Cantaloupe 4 that doesn't generate the context["cookies"] hash in the way you'd expect; here's the fix
-    begin
+    if (context["cookies"]["Cookie"].respond_to?(:match))
       cookieval = context["cookies"]["Cookie"].match (/auth_token=(.[^;$]*)/) { |kv| kv[1] }
     end
     header_match = context["request_headers"]["Authorization"].match(/Bearer (.+)/) if context["request_headers"]["Authorization"]
