@@ -1,6 +1,6 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-FROM alpine:3.10
+FROM alpine:3.12.0
 
 WORKDIR /tmp
 
