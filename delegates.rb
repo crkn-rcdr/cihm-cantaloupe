@@ -19,7 +19,7 @@ class CustomDelegate
 
     return (query["token"] ? query["token"][0] : nil) ||
       cookie_token ||
-      (header_match ? header_match[0] : nil) ||
+      (header_match ? header_match[1] : nil) ||
       nil
   end
 
