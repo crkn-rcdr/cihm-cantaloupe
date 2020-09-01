@@ -13,7 +13,7 @@ class CustomDelegate
   def canvas
     unless @canvas
       if context["identifier"].start_with?("69429")
-        canvas_uri = URI([ENV["CANVAS_DB"], context["identifier"].gsub("/", "%2F")].join("/"))
+        canvas_uri = URI([ENV["CANVAS_DB"], CGI.escape(context["identifier"])].join("/"))
         response = Net::HTTP.get_response(canvas_uri)
         @canvas = response.is_a?(Net::HTTPSuccess) ? JSON.parse(response.body) : nil
       else
