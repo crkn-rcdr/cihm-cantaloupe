@@ -3,12 +3,25 @@
 ##
 
 require 'cgi'
-require 'uri'
 require 'jwt'
 require 'json'
+require 'net/http'
 
 class CustomDelegate
   attr_accessor :context
+
+  def canvas
+    unless @canvas
+      if context["identifier"].start_with?("69429")
+        canvas_uri = URI([ENV["CANVAS_DB"], context["identifier"].gsub("/", "%2F")].join("/"))
+        response = Net::HTTP.get_response(canvas_uri)
+        @canvas = response.is_a?(Net::HTTPSuccess) ? JSON.parse(response.body) : nil
+      else
+        @canvas = nil
+      end
+    end
+    @canvas
+  end
 
   def extractJwt
     query = CGI.parse(URI.parse(context["request_uri"]).query || '')
@@ -62,27 +75,32 @@ class CustomDelegate
   end
 
   def authorize(options = {})
-    jwt = self.extractJwt
+    canvas = self.canvas
+    if (canvas && !canvas["takedown"])
+      return true
+    else
+      jwt = self.extractJwt
 
-    unless (jwt)
-      puts "Unauthorized: JWT could not be extracted from request."
-      return false
-    end
-
-    jwtData = validateJwt(jwt)
-    unless (jwtData)
-      puts "Unauthorized: JWT could not be validated."
-      return false
-    end
-
-    if (jwtData["derivativeFiles"])
-      unless (context["identifier"].match jwtData["derivativeFiles"])
-        puts "Unauthorized: Derivative image requested that was not allowed by the 'derivativeFiles' condition."
+      unless (jwt)
+        puts "Unauthorized: JWT could not be extracted from request."
         return false
       end
+  
+      jwtData = validateJwt(jwt)
+      unless (jwtData)
+        puts "Unauthorized: JWT could not be validated."
+        return false
+      end
+  
+      if (jwtData["derivativeFiles"])
+        unless (context["identifier"].match jwtData["derivativeFiles"])
+          puts "Unauthorized: Derivative image requested that was not allowed by the 'derivativeFiles' condition."
+          return false
+        end
+      end
+  
+      return true
     end
-
-    return true
   end
 
   def extra_iiif2_information_response_keys(options = {})
@@ -112,6 +130,14 @@ class CustomDelegate
   end
 
   def s3source_object_info(options = {})
+    rv = { "bucket" => ENV["S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"] }
+    canvas = self.canvas
+    if canvas
+      rv["key"] = canvas["master"]["path"]
+    else
+      rv["key"] = context["identifier"]
+    end
+    return rv
   end
 
   def overlay(options = {})
