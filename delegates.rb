@@ -5,6 +5,7 @@
 require 'cgi'
 require 'jwt'
 require 'json'
+require 'zlib'
 require 'net/http'
 
 class CustomDelegate
@@ -108,13 +109,34 @@ class CustomDelegate
   end
 
   def source(options = {})
-    return "FilesystemSource"
   end
 
   def azurestoragesource_blob_key(options = {})
   end
 
   def filesystemsource_pathname(options = {})
+    repository_base = ENV["REPOSITORY_BASE"]
+    repository_list = Dir.entries(repository_base).grep_v(/^\.*$/)
+    canvas = self.canvas
+    if canvas
+      pathname = canvas["master"]["path"]
+    else
+      pathname = context["identifier"]
+    end
+    aip, partpath = CGI::unescape(pathname).split('/', 2)
+    depositor = aip.split('.')[0]
+    aip_hash = Zlib::crc32(aip).to_s[-3..-1]
+    aip_path = nil;
+    repository_list.each do |path|
+      testpath = [repository_base, path, depositor, aip_hash, aip].join("/")
+      if File.directory?(testpath)
+        aip_path = testpath
+        break
+      end
+    end
+    return nil unless aip_path
+    # Note: For anything beyond a test script, don't trust 'partpath' (check for ../)
+    return [aip_path, partpath].join("/")
   end
 
   def httpsource_resource_info(options = {})

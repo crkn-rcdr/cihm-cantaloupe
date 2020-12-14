@@ -10,6 +10,9 @@ services:
     #ports:
     #  - "8182:8182"
     # environment:
+    # - SOURCE_STATIC=S3Source (for Swift)
+    # - SOURCE_STATIC=FilesystemSource (for ZFS)
+    # - REPOSITORY_BASE=/path/to/repository (for ZFS)
     # - S3SOURCE_ENDPOINT=https://swifts3.endpoint/
     # - S3SOURCE_ACCESS_KEY_ID=swiftuser
     # - S3SOURCE_SECRET_KEY=swifts3secret
