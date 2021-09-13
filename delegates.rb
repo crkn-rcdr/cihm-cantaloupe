@@ -77,6 +77,8 @@ class CustomDelegate
 
   def authorize(options = {})
     canvas = self.canvas
+    puts "Canvas: " + JSON.generate(canvas)
+
     if (canvas && !canvas["takedown"])
       return true
     else
