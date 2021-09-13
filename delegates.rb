@@ -77,7 +77,7 @@ class CustomDelegate
 
   def authorize(options = {})
     canvas = self.canvas
-    puts "Canvas: " + JSON.generate(canvas)
+    puts "authorize() Canvas: " + JSON.generate(canvas)
 
     if (canvas && !canvas["takedown"])
       return true
@@ -120,6 +120,8 @@ class CustomDelegate
     repository_base = ENV["REPOSITORY_BASE"]
     repository_list = Dir.entries(repository_base).grep_v(/^\.*$/)
     canvas = self.canvas
+
+    puts "filesystemsource_pathname() Canvas: " + JSON.generate(canvas)
     if canvas
       pathname = canvas["master"]["path"]
     else
@@ -156,11 +158,19 @@ class CustomDelegate
   def s3source_object_info(options = {})
     rv = { "bucket" => ENV["S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"] }
     canvas = self.canvas
+    puts "s3source_object_info() Canvas: " + JSON.generate(canvas)
     if canvas
-      rv["key"] = canvas["master"]["path"]
+      extension = canvas["master"]["extension"]
+      if extension
+        rv["key"] = context["identifier"]+"."+extension
+        rv["bucket"] = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
+      else
+        rv["key"] = canvas["master"]["path"]
+      end
     else
       rv["key"] = context["identifier"]
     end
+    puts "s3source_object_info() rv: " + JSON.generate(rv)
     return rv
   end
 
