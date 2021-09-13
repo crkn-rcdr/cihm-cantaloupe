@@ -118,7 +118,6 @@ class CustomDelegate
     repository_base = ENV["REPOSITORY_BASE"]
     repository_list = Dir.entries(repository_base).grep_v(/^\.*$/)
     canvas = self.canvas
-
     if canvas
       # TODO: Do we want to bother supporting ZFS filesystem any more?
       # access-files Swift container may have different images...
