@@ -160,7 +160,7 @@ class CustomDelegate
     if canvas
       extension = canvas["master"]["extension"]
       if extension
-        rv["key"] = context["identifier"]+"."+extension
+        rv["key"] = context["identifier"] + "." + extension
         rv["bucket"] = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
       else
         # Assuming one of the two must exist
