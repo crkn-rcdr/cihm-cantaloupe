@@ -119,6 +119,9 @@ class CustomDelegate
     repository_list = Dir.entries(repository_base).grep_v(/^\.*$/)
     canvas = self.canvas
     if canvas
+      # TODO: Do we want to bother supporting ZFS filesystem any more?
+      # access-files Swift container may have different images...
+      # should we be looking at canvas["source"]["path"] ?
       pathname = canvas["master"]["path"]
     else
       pathname = context["identifier"]
@@ -155,7 +158,14 @@ class CustomDelegate
     rv = { "bucket" => ENV["S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"] }
     canvas = self.canvas
     if canvas
-      rv["key"] = canvas["master"]["path"]
+      extension = canvas["master"]["extension"]
+      if extension
+        rv["key"] = context["identifier"] + "." + extension
+        rv["bucket"] = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
+      else
+        # Assuming one of the two must exist
+        rv["key"] = canvas["master"]["path"]
+      end
     else
       rv["key"] = context["identifier"]
     end

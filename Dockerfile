@@ -50,7 +50,7 @@ RUN wget -nv "https://github.com/medusa-project/cantaloupe/releases/download/v$V
   && chown -R cantaloupe:cantaloupe /var/log/cantaloupe \
   && chown -R cantaloupe:cantaloupe /var/cache/cantaloupe
 
-COPY --chown=cantaloupe:cantaloupe cantaloupe.properties delegates.rb /etc/
+COPY --chown=cantaloupe:cantaloupe cantaloupe.properties delegates.rb test.rb /etc/
 
 USER cantaloupe
 

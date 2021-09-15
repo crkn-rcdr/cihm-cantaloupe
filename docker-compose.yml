@@ -17,6 +17,7 @@ services:
     # - S3SOURCE_ACCESS_KEY_ID=swiftuser
     # - S3SOURCE_SECRET_KEY=swifts3secret
     # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
+    # - S3SOURCE_ACCESSFILES_BUCKET_NAME: test-access-files
     # - CANVAS_DB=http://couch.domain/canvas (do not add a trailing slash)
     # - CAP_JWT_SECRET=capjwtsecret
     # - AUTH_JWT_SECRET=authjwtsecret
