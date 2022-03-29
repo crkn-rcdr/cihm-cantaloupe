@@ -1,6 +1,6 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-FROM alpine:3.12.8
+FROM alpine:3.15.3
 
 WORKDIR /tmp
 
@@ -35,7 +35,7 @@ RUN cd /tmp && apk add --virtual build-dependencies cmake g++ make nasm \
   && make && make install \
   && apk del build-dependencies
 
-ENV VERSION=4.1.6
+ENV VERSION=4.1.11
 
 RUN wget -nv "https://github.com/medusa-project/cantaloupe/releases/download/v$VERSION/Cantaloupe-$VERSION.zip" \
   && mkdir -p /usr/local/ \

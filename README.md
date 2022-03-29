@@ -10,4 +10,4 @@ Expected environment variables can be found in `docker-compose.yml`. Note the us
 
       $ docker-compose up --build
 
-Sets up an instance of Cantaloupe and Apache, listening on \*:80.
+Sets up an instance of Cantaloupe, to be used with the HAProxy configuration at https://github.com/crkn-rcdr/Access-Platform/tree/main/services/haproxy
