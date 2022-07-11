@@ -21,6 +21,13 @@ services:
     # - CANVAS_DB=http://couch.domain/canvas (do not add a trailing slash)
     # - CAP_JWT_SECRET=capjwtsecret
     # - AUTH_JWT_SECRET=authjwtsecret
+
+    # Use the following with openstackswift/saio in development
+    # - S3SOURCE_ENDPOINT: http://172.30.0.54:8080
+    # - S3SOURCE_ACCESS_KEY_ID: test:tester
+    # - S3SOURCE_SECRET_KEY: testing
+    # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME: preservation-cihm-aip
+    # - S3SOURCE_ACCESSFILES_BUCKET_NAME: access-files
 networks:
   access-platform:
     external: true
