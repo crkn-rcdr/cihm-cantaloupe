@@ -1,6 +1,6 @@
 # this file is an edited version of https://github.com/kaij/cantaloupe/blob/docker-deploy/docker/Dockerfile
 
-FROM alpine:3.15.3
+FROM alpine:3.16.3
 
 WORKDIR /tmp
 
@@ -20,10 +20,11 @@ RUN apk --no-cache add openjdk11 wget openjpeg-tools ruby msttcorefonts-installe
   && tar -xzpf jai.tar.gz
 
 # https://github.com/crkn-rcdr/cihm-cantaloupe/issues/15
+ENV TURBOVERSION=2.1.4
 RUN cd /tmp && apk add --virtual build-dependencies cmake g++ make nasm \
-  && wget https://downloads.sourceforge.net/project/libjpeg-turbo/2.0.3/libjpeg-turbo-2.0.3.tar.gz \
-  && tar -xpf libjpeg-turbo-2.0.3.tar.gz \
-  && cd libjpeg-turbo-2.0.3 \
+  && wget "https://downloads.sourceforge.net/project/libjpeg-turbo/${TURBOVERSION}/libjpeg-turbo-${TURBOVERSION}.tar.gz" \
+  && tar -xpf libjpeg-turbo-${TURBOVERSION}.tar.gz \
+  && cd libjpeg-turbo-${TURBOVERSION} \
   && cmake \
   -DCMAKE_INSTALL_PREFIX=/usr \
   -DCMAKE_INSTALL_LIBDIR=/usr/lib \
