@@ -4,15 +4,15 @@ import sys
 from keystoneauth1 import session
 from keystoneauth1.identity import v3
 
-
+###
+# environment
 SWIFT_AUTH_URL = os.getenv("SWIFT_AUTH_URL")
 SWIFT_USERNAME = os.getenv("SWIFT_USERNAME")
 SWIFT_PASSWORD = os.getenv("SWIFT_PASSWORD")
 SWIFT_TENNANT = os.getenv("SWIFT_TENNANT")
 
 ###
-# environment
-# Create a password auth plugin
+# Enter password in auth plugin
 auth = v3.Password(auth_url=SWIFT_AUTH_URL,
                    username=SWIFT_USERNAME,
                    password=SWIFT_PASSWORD,
