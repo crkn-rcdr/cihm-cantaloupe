@@ -11,15 +11,40 @@ require 'net/http'
 class CustomDelegate
   attr_accessor :context
 
+  def check_couch(container_name)
+    canvas_uri = URI([ENV["CANVAS_DB"], CGI.escape(@context["identifier"])].join("/"))
+    response = Net::HTTP.get_response(canvas_uri)
+    return nil unless response.is_a?(Net::HTTPSuccess)
+    couch_res = JSON.parse(response.body)
+    extension = couch_res.dig("master", "extension")  # Safely dig for 'extension'
+    if extension
+      return { 
+        "filename" => "#{@context['identifier']}.#{extension}",
+        "source" => ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
+      }
+    else # TODO: We need a script to clean up images so that they are all in access-files
+      return { 
+        "filename" => couch_res.dig("source", "path"), 
+        "source" => ENV["S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"]
+      }
+    end
+  end
+
   def canvas
+    return @canvas if @canvas  
+    container_name = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
+    @canvas = self.check_couch(container_name)
+    # For new IIIF Presentation API Workflow:
+    # If canvas is not found in legacy access database, attempt to 
+    # retrieve it from Swift directly.
+    # Python ended up running quicker and being cleaner than
+    # network requests in ruby.
     unless @canvas
-      if context["identifier"].start_with?("69429")
-        canvas_uri = URI([ENV["CANVAS_DB"], CGI.escape(context["identifier"])].join("/"))
-        response = Net::HTTP.get_response(canvas_uri)
-        @canvas = response.is_a?(Net::HTTPSuccess) ? JSON.parse(response.body) : nil
-      else
-        @canvas = nil
-      end
+      filename = `python3 /etc/swift.py '#{container_name}' '#{@context["identifier"]}'`
+      @canvas = { 
+        "filename" => filename.chomp,
+        "source" => container_name
+      }
     end
     @canvas
   end
@@ -30,7 +55,6 @@ class CustomDelegate
     cookies = context["cookies"]["Cookie"] || ""
     cookie_token = cookies.match(/auth_token=(.[^;$]*)/) { |kv| kv[1] }
     header_match = context["request_headers"]["Authorization"].match(/Bearer (.+)/) if context["request_headers"]["Authorization"]
-
     return (query["token"] ? query["token"][0] : nil) ||
       cookie_token ||
       (header_match ? header_match[1] : nil) ||
@@ -155,20 +179,11 @@ class CustomDelegate
   end
 
   def s3source_object_info(options = {})
-    rv = { "bucket" => ENV["S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"] }
     canvas = self.canvas
-    if canvas
-      extension = canvas["master"]["extension"]
-      if extension
-        rv["key"] = context["identifier"] + "." + extension
-        rv["bucket"] = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
-      else
-        # Assuming one of the two must exist
-        rv["key"] = canvas["master"]["path"]
-      end
-    else
-      rv["key"] = context["identifier"]
-    end
+    rv = { 
+      "bucket" => canvas["source"],
+      "key" => canvas["filename"]
+    }
     return rv
   end
 

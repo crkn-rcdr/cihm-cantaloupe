@@ -21,6 +21,10 @@ services:
     # - CANVAS_DB=http://couch.domain/canvas (do not add a trailing slash)
     # - CAP_JWT_SECRET=capjwtsecret
     # - AUTH_JWT_SECRET=authjwtsecret
+    # - SWIFT_AUTH_URL=
+    # - SWIFT_USERNAME=
+    # - SWIFT_PASSWORD=
+    # - SWIFT_TENNANT=
 
     # Use the following with openstackswift/saio in development
     # - S3SOURCE_ENDPOINT: http://172.30.0.54:8080
