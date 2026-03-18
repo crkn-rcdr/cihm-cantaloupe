@@ -1,0 +1,35 @@
+services:
+  cantaloupe:
+    build: .
+    image: cihm-cantaloupe
+    networks:
+      access-platform:
+        ipv4_address: 172.30.0.5
+    #ports:
+    #  - "8182:8182"
+    # environment:
+    # - SOURCE_STATIC=S3Source (for Swift)
+    # - SOURCE_STATIC=FilesystemSource (for ZFS)
+    # - REPOSITORY_BASE=/path/to/repository (for ZFS)
+    # - S3SOURCE_ENDPOINT=https://swifts3.endpoint/
+    # - S3SOURCE_ACCESS_KEY_ID=swiftuser
+    # - S3SOURCE_SECRET_KEY=swifts3secret
+    # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
+    # - S3SOURCE_ACCESSFILES_BUCKET_NAME: test-access-files
+    # - CANVAS_DB=http://couch.domain/canvas (do not add a trailing slash)
+    # - CAP_JWT_SECRET=capjwtsecret
+    # - AUTH_JWT_SECRET=authjwtsecret
+    # - SWIFT_AUTH_URL=
+    # - SWIFT_USERNAME=
+    # - SWIFT_PASSWORD=
+    # - SWIFT_TENNANT=
+
+    # Use the following with openstackswift/saio in development
+    # - S3SOURCE_ENDPOINT: http://172.30.0.54:8080
+    # - S3SOURCE_ACCESS_KEY_ID: test:tester
+    # - S3SOURCE_SECRET_KEY: testing
+    # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME: preservation-cihm-aip
+    # - S3SOURCE_ACCESSFILES_BUCKET_NAME: access-files
+networks:
+  access-platform:
+    external: true
