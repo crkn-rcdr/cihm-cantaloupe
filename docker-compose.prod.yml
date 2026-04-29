@@ -6,7 +6,7 @@ services:
       access-platform:
         ipv4_address: 172.30.0.5
     volumes:
-      - ./data:/data:ro
+      - /data/cantaloupe/:/data:ro
     environment:
       IMAGE_EXTENSIONS_DB: /data/image-extensions.sqlite
     #ports:
