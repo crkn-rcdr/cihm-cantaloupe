@@ -21,6 +21,8 @@ CREATE TABLE image_extensions (
 );
 ```
 
+The latest images are all jpg so we do not need to add entries for them.
+
 ## Image Extension Index
 
 Build or refresh the SQLite index from CouchDB before starting Cantaloupe:
