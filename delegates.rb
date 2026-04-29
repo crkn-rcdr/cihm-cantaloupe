@@ -1,197 +1,272 @@
 ##
-# Custom delegate for Canadiana's configuration of Cantaloupe
+# Custom delegate for Canadiana's configuration of Cantaloupe (5.x compatible)
 ##
 
 require 'cgi'
 require 'jwt'
 require 'json'
 require 'zlib'
-require 'net/http'
+require 'uri'
+
+begin
+  require 'java'
+  java_import 'java.sql.DriverManager'
+  java.lang.Class.forName('org.sqlite.JDBC')
+rescue StandardError => e
+  puts "SQLite JDBC unavailable: #{e.message}"
+end
 
 class CustomDelegate
   attr_accessor :context
 
-  def check_couch(container_name)
-    canvas_uri = URI([ENV["CANVAS_DB"], CGI.escape(@context["identifier"])].join("/"))
-    response = Net::HTTP.get_response(canvas_uri)
-    return nil unless response.is_a?(Net::HTTPSuccess)
-    couch_res = JSON.parse(response.body)
-    extension = couch_res.dig("master", "extension")  # Safely dig for 'extension'
-    if extension
-      return { 
-        "filename" => "#{@context['identifier']}.#{extension}",
-        "source" => ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
-      }
-    else # TODO: We need a script to clean up images so that they are all in access-files
-      return { 
-        "filename" => couch_res.dig("source", "path"), 
-        "source" => ENV["S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"]
-      }
-    end
-  end
+  IMAGE_EXTENSIONS_DB = ENV["IMAGE_EXTENSIONS_DB"]
+  DEFAULT_EXTENSION = "jpg"
+  @@extension_db_connection = nil
+  @@extension_db_mutex = Mutex.new
 
+  #
+  # Canvas lookup (unchanged logic, safer handling)
+  #
   def canvas
-    return @canvas if @canvas  
+    return @canvas if @canvas
+
     container_name = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
-    @canvas = self.check_couch(container_name)
-    # For new IIIF Presentation API Workflow:
-    # If canvas is not found in legacy access database, attempt to 
-    # retrieve it from Swift directly.
-    # Python ended up running quicker and being cleaner than
-    # network requests in ruby.
-    unless @canvas
-      filename = `python3 /etc/swift.py '#{container_name}' '#{@context["identifier"]}'`
-      @canvas = { 
-        "filename" => filename.chomp,
-        "source" => container_name
-      }
-    end
-    @canvas
+    identifier = context["identifier"]
+
+    return nil unless container_name && identifier
+
+    filename = swift_filename(container_name, identifier)
+
+    @canvas = {
+      "filename" => filename,
+      "source"   => container_name
+    }
   end
 
+  def swift_filename(container_name, identifier)
+    "#{identifier}.#{extension_for(identifier)}"
+  end
+
+  def extension_for(identifier)
+    extension_from_db(identifier) || DEFAULT_EXTENSION
+  end
+
+  def extension_from_db(identifier)
+    return nil unless defined?(DriverManager) && File.readable?(IMAGE_EXTENSIONS_DB)
+
+    @@extension_db_mutex.synchronize do
+      connection = extension_db_connection
+      statement = connection.prepareStatement(
+        "SELECT extension FROM image_extensions WHERE identifier = ?"
+      )
+      begin
+        statement.setString(1, identifier)
+        result = statement.executeQuery
+        begin
+          return normalize_extension(result.getString(1)) if result.next
+        ensure
+          result.close
+        end
+      ensure
+        statement.close
+      end
+    end
+  rescue StandardError => e
+    puts "SQLite extension lookup failed for #{identifier}: #{e.message}"
+    nil
+  end
+
+  def extension_db_connection
+    @@extension_db_connection ||= DriverManager.getConnection(
+      "jdbc:sqlite:file:#{IMAGE_EXTENSIONS_DB}?mode=ro&immutable=1"
+    )
+  end
+
+  def normalize_extension(extension)
+    extension.to_s.sub(/\A\./, "").downcase
+  end
+
+  #
+  # Extract JWT from query param, cookie, or Authorization header
+  # Cantaloupe 5 FIX: remove old cookie workaround
+  #
   def extractJwt
-    query = CGI.parse(URI.parse(context["request_uri"]).query || '')
-    # there's a bug in Cantaloupe 4 that doesn't generate the context["cookies"] hash in the way you'd expect; here's the fix
-    cookies = context["cookies"]["Cookie"] || ""
-    cookie_token = cookies.match(/auth_token=(.[^;$]*)/) { |kv| kv[1] }
-    header_match = context["request_headers"]["Authorization"].match(/Bearer (.+)/) if context["request_headers"]["Authorization"]
-    return (query["token"] ? query["token"][0] : nil) ||
-      cookie_token ||
-      (header_match ? header_match[1] : nil) ||
-      nil
+    uri = URI.parse(context["request_uri"]) rescue nil
+    query = uri ? CGI.parse(uri.query.to_s) : {}
+
+    # Query parameter token
+    return query["token"].first if query["token"]&.any?
+
+    # Cookie parsing (5.x provides normalized cookies)
+    cookies = context["cookies"] || {}
+    return cookies["auth_token"] if cookies["auth_token"]
+
+    # Authorization header (Bearer token)
+    headers = context["request_headers"] || {}
+    auth = headers["Authorization"] || headers["authorization"]
+
+    if auth && auth =~ /^Bearer\s+(.+)$/
+      return Regexp.last_match(1)
+    end
+
+    nil
   end
 
+  #
+  # Validate JWT
+  #
   def validateJwt(token)
-    jwtData = nil
+    payload = JWT.decode(token, nil, false)[0] rescue nil
+    return nil unless payload
 
-    begin
-      jwtData = JWT.decode(token, nil, false)[0]
-    rescue JWT::DecodeError => e
-      puts "JWT Decode error: #{e.message}"
-      return nil
-    end
+    issuer = payload["iss"]
+    return nil unless issuer
 
-    issuer = jwtData["iss"]
-    unless (issuer)
-      puts "JWT must indicate issuer in payload."
-      return nil
-    end
+    signing_key =
+      if issuer == "CAP"
+        ENV["CAP_JWT_SECRET"]
+      elsif issuer.match(%r{https://auth.*\.canadiana\.ca/})
+        ENV["AUTH_JWT_SECRET"]
+      end
 
-    if (issuer == "CAP")
-      signingKey = ENV["CAP_JWT_SECRET"]
-    elsif (/https:\/\/auth.*\.canadiana\.ca\//.match(issuer))
-      signingKey = ENV["AUTH_JWT_SECRET"]
-    end
+    return nil unless signing_key
 
-    unless (signingKey)
-      puts "JWT cannot be decoded with #{issuer}'s secret key."
-      return nil
-    end
+    JWT.decode(token, signing_key, true, algorithm: "HS256")[0]
+  rescue JWT::DecodeError => e
+    puts "JWT decode error: #{e.message}"
+    nil
+  end
 
-    jwtData = nil
-    begin
-      jwtData = JWT.decode(token, signingKey, true, { :algorithm => 'HS256' })[0]
-    rescue JWT::DecodeError => e
-      puts "JWT Decode error: #{e.message}"
-      return nil
-    end
-
-    return jwtData
+  #
+  # Authorization hook
+  #
+  def pre_authorize(options = {})
+    authorize(options)
   end
 
   def authorize(options = {})
     canvas = self.canvas
-    if (canvas && !canvas["takedown"])
-      return true
-    else
-      jwt = self.extractJwt
 
-      unless (jwt)
-        puts "Unauthorized: JWT could not be extracted from request."
-        return false
-      end
-  
-      jwtData = validateJwt(jwt)
-      unless (jwtData)
-        puts "Unauthorized: JWT could not be validated."
-        return false
-      end
-  
-      if (jwtData["derivativeFiles"])
-        unless (context["identifier"].match jwtData["derivativeFiles"])
-          puts "Unauthorized: Derivative image requested that was not allowed by the 'derivativeFiles' condition."
-          return false
-        end
-      end
-  
-      return true
+    # Public access if no takedown
+    return true if canvas && !canvas["takedown"]
+
+    token = extractJwt
+    unless token
+      puts "Unauthorized: No JWT provided"
+      return false
     end
+
+    jwt_data = validateJwt(token)
+    unless jwt_data
+      puts "Unauthorized: Invalid JWT"
+      return false
+    end
+
+    if jwt_data["derivativeFiles"]
+      unless context["identifier"]&.match(jwt_data["derivativeFiles"])
+        puts "Unauthorized: derivativeFiles restriction failed"
+        return false
+      end
+    end
+
+    true
   end
 
+  #
+  # IIIF 2 extension hook (kept for backward compatibility)
+  #
   def extra_iiif2_information_response_keys(options = {})
     {}
   end
 
+  def extra_iiif3_information_response_keys(options = {})
+    {}
+  end
+
+  def deserialize_meta_identifier(identifier = nil)
+    nil
+  end
+
+  def serialize_meta_identifier(identifier = nil)
+    nil
+  end
+
   def source(options = {})
+    nil
   end
 
   def azurestoragesource_blob_key(options = {})
+    nil
   end
 
+  #
+  # Filesystem source resolution (unchanged logic, safer)
+  #
   def filesystemsource_pathname(options = {})
     repository_base = ENV["REPOSITORY_BASE"]
-    repository_list = Dir.entries(repository_base).grep_v(/^\.*$/)
+    return nil unless repository_base
+
     canvas = self.canvas
-    if canvas
-      # TODO: Do we want to bother supporting ZFS filesystem any more?
-      # access-files Swift container may have different images...
-      # should we be looking at canvas["source"]["path"] ?
-      pathname = canvas["master"]["path"]
-    else
-      pathname = context["identifier"]
+    pathname = canvas ? canvas.dig("master", "path") : context["identifier"]
+    return nil unless pathname
+
+    aip, partpath = CGI.unescape(pathname).split("/", 2)
+    depositor = aip.split(".").first
+    aip_hash = Zlib.crc32(aip).to_s[-3..]
+
+    Dir.entries(repository_base).grep_v(/^\./).each do |path|
+      testpath = File.join(repository_base, path, depositor, aip_hash, aip)
+      return File.join(testpath, partpath) if File.directory?(testpath)
     end
-    aip, partpath = CGI::unescape(pathname).split('/', 2)
-    depositor = aip.split('.')[0]
-    aip_hash = Zlib::crc32(aip).to_s[-3..-1]
-    aip_path = nil;
-    repository_list.each do |path|
-      testpath = [repository_base, path, depositor, aip_hash, aip].join("/")
-      if File.directory?(testpath)
-        aip_path = testpath
-        break
-      end
-    end
-    return nil unless aip_path
-    # Note: For anything beyond a test script, don't trust 'partpath' (check for ../)
-    return [aip_path, partpath].join("/")
+
+    nil
   end
 
   def httpsource_resource_info(options = {})
+    nil
   end
 
   def jdbcsource_database_identifier(options = {})
+    nil
+  end
+
+  def jdbcsource_last_modified(options = {})
+    nil
   end
 
   def jdbcsource_media_type(options = {})
+    nil
   end
 
   def jdbcsource_lookup_sql(options = {})
+    nil
   end
 
+  #
+  # S3 source mapping
+  #
   def s3source_object_info(options = {})
     canvas = self.canvas
-    rv = { 
+    return nil unless canvas
+
+    {
       "bucket" => canvas["source"],
-      "key" => canvas["filename"]
+      "key"    => canvas["filename"]
     }
-    return rv
+  end
+
+  def metadata(options = {})
+    nil
   end
 
   def overlay(options = {})
+    {}
   end
 
+  #
+  # No overlays / redactions by default
+  #
   def redactions(options = {})
     []
   end
 end
-

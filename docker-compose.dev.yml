@@ -5,6 +5,10 @@ services:
     networks:
       access-platform:
         ipv4_address: 172.30.0.5
+    volumes:
+      - ./data:/data:ro
+    environment:
+      IMAGE_EXTENSIONS_DB: /data/image-extensions.sqlite
     #ports:
     #  - "8182:8182"
     # environment:
@@ -26,8 +30,8 @@ services:
 
     # Use the following with openstackswift/saio in development
     # - S3SOURCE_ENDPOINT: http://172.30.0.54:8080
-    # - S3SOURCE_ACCESS_KEY_ID: test:tester
-    # - S3SOURCE_SECRET_KEY: testing
+    # - S3SOURCE_ACCESS_KEY_ID: <swift-access-key-id>
+    # - S3SOURCE_SECRET_KEY: <swift-secret-key>
     # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME: preservation-cihm-aip
     # - S3SOURCE_ACCESSFILES_BUCKET_NAME: access-files
 networks:
