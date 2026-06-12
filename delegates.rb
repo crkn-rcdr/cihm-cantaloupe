@@ -21,7 +21,9 @@ class CustomDelegate
 
   IMAGE_EXTENSIONS_DB = ENV["IMAGE_EXTENSIONS_DB"]
   DEFAULT_EXTENSION = "jpg"
+  MISSING_EXTENSIONS = ["", "none", "null", "nil"].freeze
   @@extension_db_connection = nil
+  @@extension_db_fingerprint = nil
   @@extension_db_mutex = Mutex.new
 
   #
@@ -52,10 +54,11 @@ class CustomDelegate
   end
 
   def extension_from_db(identifier)
-    return nil unless defined?(DriverManager) && File.readable?(IMAGE_EXTENSIONS_DB)
+    db_path = extension_db_path
+    return nil unless defined?(DriverManager) && db_path && File.readable?(db_path)
 
     @@extension_db_mutex.synchronize do
-      connection = extension_db_connection
+      connection = extension_db_connection(db_path)
       statement = connection.prepareStatement(
         "SELECT extension FROM image_extensions WHERE identifier = ?"
       )
@@ -76,14 +79,47 @@ class CustomDelegate
     nil
   end
 
-  def extension_db_connection
-    @@extension_db_connection ||= DriverManager.getConnection(
-      "jdbc:sqlite:file:#{IMAGE_EXTENSIONS_DB}?mode=ro&immutable=1"
+  def extension_db_path
+    path = IMAGE_EXTENSIONS_DB.to_s
+    return nil if path.empty?
+
+    path
+  end
+
+  def extension_db_connection(db_path)
+    fingerprint = extension_db_fingerprint(db_path)
+
+    if @@extension_db_connection && @@extension_db_fingerprint == fingerprint
+      return @@extension_db_connection
+    end
+
+    close_extension_db_connection
+    @@extension_db_connection = DriverManager.getConnection(
+      "jdbc:sqlite:file:#{db_path}?mode=ro&immutable=1"
     )
+    @@extension_db_fingerprint = fingerprint
+    @@extension_db_connection
+  end
+
+  def close_extension_db_connection
+    @@extension_db_connection&.close
+  rescue StandardError => e
+    puts "SQLite extension DB close failed: #{e.message}"
+  ensure
+    @@extension_db_connection = nil
+    @@extension_db_fingerprint = nil
+  end
+
+  def extension_db_fingerprint(db_path)
+    stat = File.stat(db_path)
+    [db_path, stat.size, stat.mtime.to_f]
   end
 
   def normalize_extension(extension)
-    extension.to_s.sub(/\A\./, "").downcase
+    normalized = extension.to_s.strip.sub(/\A\./, "").downcase
+    return nil if MISSING_EXTENSIONS.include?(normalized)
+
+    normalized
   end
 
   #

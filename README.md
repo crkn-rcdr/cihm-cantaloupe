@@ -12,7 +12,9 @@ For Swift access-file extension lookup, the delegate uses a read-only SQLite ind
 /data/image-extensions.sqlite
 ```
 
-The index maps each canvas identifier to its master image extension:
+The index maps each canvas identifier to its master image extension. It stores
+every real extension emitted by the CouchDB view, including `jpg`, `jp2`, and
+`tif`; sentinel values such as `none` are treated as missing extensions:
 
 ```
 CREATE TABLE image_extensions (
@@ -20,8 +22,6 @@ CREATE TABLE image_extensions (
   extension TEXT NOT NULL
 );
 ```
-
-The latest images are all jpg so we do not need to add entries for them.
 
 ## Image Extension Index
 
@@ -47,7 +47,10 @@ The compose files mount `./data` read-only into the container and set:
 IMAGE_EXTENSIONS_DB=/data/image-extensions.sqlite
 ```
 
-If an identifier is missing from the SQLite index, the delegate falls back to `.jpg`.
+If an identifier is missing from the SQLite index, the delegate falls back to
+`.jpg`. For JP2/TIFF records, a 404 mentioning a `.jpg` key usually means the
+running Cantaloupe instance cannot see the expected SQLite row, is using an old
+index, or needs to reopen the refreshed index file.
 
 ## Usage
 

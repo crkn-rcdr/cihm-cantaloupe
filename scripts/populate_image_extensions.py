@@ -15,6 +15,7 @@ DEFAULT_ENV_FILE = os.path.join(
     os.path.dirname(__file__),
     "populate_image_extensions.env",
 )
+MISSING_EXTENSION_KEYS = {"none", "null", "nil"}
 
 
 def load_env_file(path):
@@ -97,9 +98,12 @@ def iter_extension_rows(database, view_name):
 
 
 def normalize_extension(extension):
-    if not extension:
+    if extension is None:
         return None
-    return extension.lstrip(".").lower()
+    normalized = str(extension).strip().lstrip(".").lower()
+    if not normalized or normalized in MISSING_EXTENSION_KEYS:
+        return None
+    return normalized
 
 
 def create_schema(connection):
