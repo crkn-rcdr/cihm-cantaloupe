@@ -1,0 +1,261 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "cgi"
+require "English"
+require "json"
+require "net/http"
+require "optparse"
+require "shellwords"
+require "uri"
+
+DEFAULT_DB_NAME = "canvas"
+DEFAULT_VIEW_NAME = "stats/masterext"
+DEFAULT_HASH_NAME = "image_extensions"
+DEFAULT_PAGE_SIZE = 10_000
+DEFAULT_PROGRESS_INTERVAL = 1_000_000
+MISSING_EXTENSION_KEYS = ["", "none", "null", "nil"].freeze
+
+def default_env_file
+  File.expand_path("populate_image_extensions.env", __dir__)
+end
+
+def load_env_file(path)
+  return unless path && File.readable?(path)
+
+  File.foreach(path) do |line|
+    line = line.strip
+    next if line.empty? || line.start_with?("#") || !line.include?("=")
+
+    key, value = line.split("=", 2)
+    key = key.strip
+    value = value.strip.sub(/\A["']/, "").sub(/["']\z/, "")
+    ENV[key] ||= value
+  end
+end
+
+def couch_server_url(db_user, db_password, db_url, db_name)
+  db_url = db_url.to_s.strip
+  raise "DB_URL or CANVAS_DB is required" if db_url.empty?
+
+  uri = URI.parse(db_url.match?(%r{\Ahttps?://}) ? db_url : "http://#{db_url}")
+  path = [uri.path.sub(%r{/+\z}, ""), db_name].reject(&:empty?).join("/")
+  path = "/#{path}" unless path.start_with?("/")
+  uri.path = path
+  uri.user = db_user.to_s unless db_user.to_s.empty?
+  uri.password = db_password.to_s unless db_password.to_s.empty?
+  uri.to_s.sub(%r{/+\z}, "")
+end
+
+def server_and_db_from_couch_url(url)
+  uri = URI.parse(url)
+  return url.sub(%r{/+\z}, "") unless uri.path.include?("/_utils")
+
+  fragment_parts = uri.fragment.to_s.sub(%r{\A/+}, "").split("/")
+  if fragment_parts.length >= 2 && fragment_parts[0] == "database"
+    db_name = CGI.unescape(fragment_parts[1])
+    uri.path = "/#{db_name}"
+    uri.fragment = nil
+    uri.query = nil
+  end
+
+  uri.to_s.sub(%r{/+\z}, "")
+end
+
+def couch_database_url(options)
+  couch_url = options[:couch_url] || ENV["CANVAS_DB"]
+  return server_and_db_from_couch_url(couch_url) if couch_url && !couch_url.empty?
+
+  couch_server_url(
+    options[:db_user] || ENV["DB_USER"],
+    options[:db_password] || ENV["DB_PASSWORD"],
+    options[:db_url] || ENV["DB_URL"],
+    options[:db_name] || ENV["DB_NAME"] || DEFAULT_DB_NAME
+  )
+end
+
+def view_uri(database_url, view_name, params)
+  design, view = view_name.split("/", 2)
+  raise "View name must look like design/view" unless design && view
+
+  uri = URI.parse(database_url)
+  db_path = uri.path.sub(%r{/+\z}, "")
+  uri.path = "#{db_path}/_design/#{CGI.escape(design)}/_view/#{CGI.escape(view)}"
+  uri.query = URI.encode_www_form(params)
+  uri
+end
+
+def request_json(uri, timeout)
+  request = Net::HTTP::Get.new(uri)
+  if uri.user || uri.password
+    request.basic_auth(CGI.unescape(uri.user.to_s), CGI.unescape(uri.password.to_s))
+  end
+
+  response = Net::HTTP.start(
+    uri.host,
+    uri.port,
+    use_ssl: uri.scheme == "https",
+    open_timeout: timeout,
+    read_timeout: timeout
+  ) { |http| http.request(request) }
+
+  unless response.is_a?(Net::HTTPSuccess)
+    raise "CouchDB request failed: #{response.code} #{response.message} #{response.body}"
+  end
+
+  JSON.parse(response.body)
+end
+
+def normalize_extension(extension)
+  normalized = extension.to_s.strip.sub(/\A\./, "").downcase
+  return nil if MISSING_EXTENSION_KEYS.include?(normalized)
+
+  normalized
+end
+
+def write_bulk(io, value)
+  value = value.to_s
+  io.write("$#{value.bytesize}\r\n#{value}\r\n")
+end
+
+def write_hset(io, hash_name, identifier, extension)
+  io.write("*4\r\n")
+  write_bulk(io, "HSET")
+  write_bulk(io, hash_name)
+  write_bulk(io, identifier)
+  write_bulk(io, extension)
+end
+
+def redis_command(options, *args)
+  command = [
+    "redis-cli",
+    "-h",
+    options[:redis_host],
+    "-p",
+    options[:redis_port].to_s,
+    *args.map(&:to_s)
+  ]
+  output = `#{command.shelljoin}`
+  raise "Redis command failed: #{command.join(' ')}" unless $CHILD_STATUS.success?
+
+  output.strip
+end
+
+def redis_pipe(options)
+  IO.popen(
+    [
+      "redis-cli",
+      "-h",
+      options[:redis_host],
+      "-p",
+      options[:redis_port].to_s,
+      "--pipe"
+    ],
+    "w"
+  ) do |pipe|
+    yield pipe
+  end
+  raise "redis-cli --pipe failed" unless $CHILD_STATUS.success?
+end
+
+def iter_couch_rows(database_url, options)
+  params = {
+    "reduce" => "false",
+    "include_docs" => "false",
+    "limit" => options[:page_size].to_s
+  }
+
+  loop do
+    body = request_json(view_uri(database_url, options[:view_name], params), options[:timeout])
+    rows = body.fetch("rows", [])
+    break if rows.empty?
+
+    rows.each do |row|
+      break if options[:limit] && options[:seen] >= options[:limit]
+
+      options[:seen] += 1
+      yield row
+    end
+
+    last = rows.last
+    params["startkey"] = JSON.generate(last["key"])
+    params["startkey_docid"] = last["id"].to_s
+    params["skip"] = "1"
+    break if options[:limit] && options[:seen] >= options[:limit]
+  end
+end
+
+def parse_args
+  load_env_file(ENV.fetch("COUCH_ENV_FILE", default_env_file))
+
+  options = {
+    couch_url: ENV["CANVAS_DB"],
+    db_user: ENV["DB_USER"],
+    db_password: ENV["DB_PASSWORD"],
+    db_url: ENV["DB_URL"],
+    db_name: ENV["DB_NAME"] || DEFAULT_DB_NAME,
+    view_name: ENV["VIEW_NAME"] || DEFAULT_VIEW_NAME,
+    page_size: ENV.fetch("COUCH_PAGE_SIZE", DEFAULT_PAGE_SIZE).to_i,
+    progress_interval: ENV.fetch("PROGRESS_INTERVAL", DEFAULT_PROGRESS_INTERVAL).to_i,
+    redis_host: ENV.fetch("REDIS_HOST", "127.0.0.1"),
+    redis_port: ENV.fetch("REDIS_PORT", "6379").to_i,
+    timeout: ENV.fetch("COUCH_TIMEOUT_SECONDS", "300").to_i,
+    limit: nil,
+    seen: 0
+  }
+
+  parser = OptionParser.new do |opts|
+    opts.banner = "Usage: populate-redis-from-couch [options] [REDIS_HASH]"
+    opts.on("--couch-url URL") { |value| options[:couch_url] = value }
+    opts.on("--db-user USER") { |value| options[:db_user] = value }
+    opts.on("--db-password PASSWORD") { |value| options[:db_password] = value }
+    opts.on("--db-url HOST[:PORT]") { |value| options[:db_url] = value }
+    opts.on("--db-name NAME") { |value| options[:db_name] = value }
+    opts.on("--view-name DESIGN/VIEW") { |value| options[:view_name] = value }
+    opts.on("--page-size N", Integer) { |value| options[:page_size] = value }
+    opts.on("--progress-interval N", Integer) { |value| options[:progress_interval] = value }
+    opts.on("--limit N", Integer) { |value| options[:limit] = value }
+    opts.on("--redis-host HOST") { |value| options[:redis_host] = value }
+    opts.on("--redis-port PORT", Integer) { |value| options[:redis_port] = value }
+    opts.on("--timeout SECONDS", Integer) { |value| options[:timeout] = value }
+  end
+  parser.parse!
+  options[:hash_name] = ARGV.shift || ENV["IMAGE_EXTENSIONS_REDIS_HASH"] || DEFAULT_HASH_NAME
+  options
+end
+
+def main
+  options = parse_args
+  database_url = couch_database_url(options)
+  target_hash = options[:hash_name]
+  load_hash = "#{target_hash}:loading"
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+  redis_command(options, "DEL", load_hash)
+
+  inserted = 0
+  redis_pipe(options) do |pipe|
+    iter_couch_rows(database_url, options) do |row|
+      identifier = row["id"]
+      extension = normalize_extension(row["key"])
+      next unless identifier && extension
+
+      write_hset(pipe, load_hash, identifier, extension)
+      inserted += 1
+
+      if options[:progress_interval].positive? && (inserted % options[:progress_interval]).zero?
+        elapsed = [Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, 0.001].max
+        warn "Loaded #{inserted} rows into #{load_hash} (#{(inserted / elapsed).round}/s)"
+      end
+    end
+  end
+
+  raise "No rows were loaded from CouchDB" if inserted.zero?
+
+  redis_command(options, "RENAME", load_hash, target_hash)
+  elapsed = [Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, 0.001].max
+  warn "Loaded #{inserted} rows in #{elapsed.round(1)}s (#{(inserted / elapsed).round}/s)"
+  puts redis_command(options, "HLEN", target_hash)
+end
+
+main

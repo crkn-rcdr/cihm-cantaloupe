@@ -1,14 +1,16 @@
 services:
   cantaloupe:
     build: .
-    image: cihm-cantaloupe
     networks:
       access-platform:
         ipv4_address: 172.30.0.5
     volumes:
-      - /data/cantaloupe:/data:ro
+      - /data/cantaloupe:/data
     environment:
-      IMAGE_EXTENSIONS_DB: /data/image-extensions.sqlite
+      IMAGE_EXTENSIONS_REDIS_URL: redis://127.0.0.1:6379/0
+      IMAGE_EXTENSIONS_REDIS_HASH: image_extensions
+      IMAGE_EXTENSIONS_REDIS_DIR: /data/redis
+      IMAGE_EXTENSIONS_REDIS_PRELOAD: "true"
     #ports:
     #  - "8182:8182"
     # environment:

@@ -1,0 +1,100 @@
+#!/bin/sh
+set -eu
+
+image="${CANTALOUPE_IMAGE:-cihm-cantaloupe:latest}"
+data_dir="${IMAGE_EXTENSIONS_DATA_DIR:-data}"
+hash_name="${IMAGE_EXTENSIONS_REDIS_HASH:-image_extensions}"
+archive="${REDIS_CACHE_ARCHIVE:-dist/redis-cache-data.tar.gz}"
+build_image="${BUILD_IMAGE:-true}"
+env_file="${COUCH_ENV_FILE:-scripts/populate_image_extensions.env}"
+
+mkdir -p "$data_dir/redis"
+data_dir="$(cd "$data_dir" && pwd)"
+archive_dir="$(dirname "$archive")"
+archive_file="$(basename "$archive")"
+mkdir -p "$archive_dir"
+archive_dir="$(cd "$archive_dir" && pwd)"
+
+if [ "$build_image" = "true" ]; then
+    docker build -t "$image" .
+fi
+
+run_loader() {
+    docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        -e CANVAS_DB \
+        -e DB_USER \
+        -e DB_PASSWORD \
+        -e DB_URL \
+        -e DB_NAME \
+        -e VIEW_NAME \
+        -e COUCH_PAGE_SIZE \
+        -e COUCH_TIMEOUT_SECONDS \
+        -e PROGRESS_INTERVAL \
+        -e IMAGE_EXTENSIONS_REDIS_HASH="$hash_name" \
+        -v "$data_dir:/data" \
+        "$@" \
+        --entrypoint /bin/sh \
+        "$image" \
+        -lc '
+            set -eu
+            mkdir -p /data/redis
+            rm -f /data/redis/dump.rdb.loading
+            redis-server \
+                --bind 127.0.0.1 \
+                --port 6379 \
+                --dir /data/redis \
+                --dbfilename dump.rdb.loading \
+                --save "" \
+                --appendonly no \
+                --daemonize yes
+
+            trap "redis-cli -h 127.0.0.1 -p 6379 SHUTDOWN NOSAVE >/dev/null 2>&1 || true" EXIT
+
+            for _ in $(seq 1 50); do
+                if redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 0.1
+            done
+
+            redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null
+            redis-cli -h 127.0.0.1 -p 6379 FLUSHDB >/dev/null
+            populate-redis-from-couch "$IMAGE_EXTENSIONS_REDIS_HASH"
+            redis-cli -h 127.0.0.1 -p 6379 SHUTDOWN SAVE >/dev/null || true
+            mv -f /data/redis/dump.rdb.loading /data/redis/dump.rdb
+            trap - EXIT
+        '
+}
+
+echo "Populating Redis hash '$hash_name' from CouchDB into $data_dir/redis"
+if [ -r "$env_file" ]; then
+    env_file="$(cd "$(dirname "$env_file")" && pwd)/$(basename "$env_file")"
+    run_loader -e COUCH_ENV_FILE=/tmp/couch.env -v "$env_file:/tmp/couch.env:ro"
+else
+    run_loader
+fi
+
+echo "Exporting Redis data directory to $archive_dir/$archive_file"
+: > "$archive_dir/$archive_file"
+tar -czf "$archive_dir/$archive_file" -C "$data_dir" redis
+
+ls -lh "$archive_dir/$archive_file"
+
+cat <<EOF
+
+Redis data is populated locally:
+  $data_dir/redis/dump.rdb
+
+Upload this archive to the host server:
+  $archive_dir/$archive_file
+
+Restore it on the host before starting Cantaloupe:
+  sudo tar -xzf "$archive_file" -C /data/cantaloupe
+  sudo mkdir -p /data/cantaloupe/cache
+  sudo chown -R 8182:8182 /data/cantaloupe/redis /data/cantaloupe/cache
+
+For the Puppet-managed beta compose, /var/cache/cantaloupe is mounted as
+/data/cache inside the container:
+  sudo chown -R 8182:8182 /data/cantaloupe/redis /var/cache/cantaloupe
+EOF

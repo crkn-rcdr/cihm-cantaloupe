@@ -2,10 +2,14 @@ docker-compose.override.yml
 config.json
 data/*.sqlite
 data/*.sqlite-*
+data/redis/
+data/cache/*
+!data/cache/.gitkeep
 scripts/populate_image_extensions.env
 scripts/*.local.env
 __pycache__/
 *.pyc
+dist/
 jai-1_1_2_01-lib-linux-i586.tar.gz
 docker-compose.dev.yml
 docker-compose.prod.yml
