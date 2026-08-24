@@ -57,6 +57,10 @@ print_runtime_diagnostics() {
     echo "  SWIFT_TENANT=${SWIFT_TENANT:-}"
     echo "  SWIFT_TENNANT=${SWIFT_TENNANT:-}"
     echo "  IMAGE_EXTENSIONS_REDIS_URL=${IMAGE_EXTENSIONS_REDIS_URL:-}"
+    echo "  IMAGE_EXTENSIONS_REDIS_HASH=${IMAGE_EXTENSIONS_REDIS_HASH:-}"
+    echo "  IMAGE_SOURCE_PATHS_REDIS_HASH=${IMAGE_SOURCE_PATHS_REDIS_HASH:-}"
+    echo "  S3SOURCE_PRESERVATION_BUCKET_NAME=${S3SOURCE_PRESERVATION_BUCKET_NAME:-}"
+    echo "  S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=${S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME:-}"
     grep -n \
         "HttpSource.lookup_strategy\|processor.ManualSelectionStrategy.tif\|processor.ManualSelectionStrategy.tiff\|processor.stream_retrieval_strategy\|processor.fallback_retrieval_strategy\|FilesystemCache.pathname" \
         /etc/cantaloupe.properties || true
@@ -85,20 +89,25 @@ preload_redis() {
     [ "$preload" = "true" ] || return 0
 
     hash_name="${IMAGE_EXTENSIONS_REDIS_HASH:-image_extensions}"
+    source_path_hash_name="${IMAGE_SOURCE_PATHS_REDIS_HASH:-image_source_paths}"
 
     existing="$(redis-cli -h 127.0.0.1 -p 6379 HLEN "$hash_name")"
-    if [ "$existing" != "0" ]; then
+    existing_source_paths="$(redis-cli -h 127.0.0.1 -p 6379 HLEN "$source_path_hash_name")"
+    if [ "$existing" != "0" ] && [ "$existing_source_paths" != "0" ]; then
         echo "Redis extension index already contains $existing rows"
+        echo "Redis source-path fallback index already contains $existing_source_paths rows"
         return 0
     fi
 
-    if [ -z "${CANVAS_DB:-}${DB_URL:-}" ]; then
-        echo "Redis extension index is empty and no CouchDB source is configured"
+    if [ -z "${DB_URL:-}" ]; then
+        echo "Redis extension/source-path index is incomplete and no CouchDB source is configured"
+        echo "  $hash_name rows: $existing"
+        echo "  $source_path_hash_name rows: $existing_source_paths"
         return 0
     fi
 
-    echo "Loading Redis extension index from CouchDB"
-    populate-redis-from-couch "$hash_name"
+    echo "Loading Redis extension and source-path fallback indexes from CouchDB"
+    populate-redis-from-couch "$hash_name" "$source_path_hash_name"
     redis-cli -h 127.0.0.1 -p 6379 SAVE >/dev/null
 }
 

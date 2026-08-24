@@ -12,9 +12,11 @@ require "uri"
 DEFAULT_DB_NAME = "canvas"
 DEFAULT_VIEW_NAME = "stats/masterext"
 DEFAULT_HASH_NAME = "image_extensions"
+DEFAULT_SOURCE_PATH_HASH_NAME = "image_source_paths"
 DEFAULT_PAGE_SIZE = 10_000
 DEFAULT_PROGRESS_INTERVAL = 1_000_000
 MISSING_EXTENSION_KEYS = ["", "none", "null", "nil"].freeze
+SOURCE_PATH_FALLBACK_KEYS = [nil, "", "none", "null", "nil"].freeze
 
 def default_env_file
   File.expand_path("populate_image_extensions.env", __dir__)
@@ -36,7 +38,7 @@ end
 
 def couch_server_url(db_user, db_password, db_url, db_name)
   db_url = db_url.to_s.strip
-  raise "DB_URL or CANVAS_DB is required" if db_url.empty?
+  raise "DB_URL is required" if db_url.empty?
 
   uri = URI.parse(db_url.match?(%r{\Ahttps?://}) ? db_url : "http://#{db_url}")
   path = [uri.path.sub(%r{/+\z}, ""), db_name].reject(&:empty?).join("/")
@@ -63,7 +65,7 @@ def server_and_db_from_couch_url(url)
 end
 
 def couch_database_url(options)
-  couch_url = options[:couch_url] || ENV["CANVAS_DB"]
+  couch_url = options[:couch_url]
   return server_and_db_from_couch_url(couch_url) if couch_url && !couch_url.empty?
 
   couch_server_url(
@@ -113,17 +115,30 @@ def normalize_extension(extension)
   normalized
 end
 
+def normalize_source_path(source_path)
+  normalized = source_path.to_s.strip
+  return nil if MISSING_EXTENSION_KEYS.include?(normalized.downcase)
+
+  normalized
+end
+
+def source_path_from_doc(doc)
+  return nil unless doc.is_a?(Hash)
+
+  normalize_source_path(doc.dig("source", "path"))
+end
+
 def write_bulk(io, value)
   value = value.to_s
   io.write("$#{value.bytesize}\r\n#{value}\r\n")
 end
 
-def write_hset(io, hash_name, identifier, extension)
+def write_hset(io, hash_name, identifier, value)
   io.write("*4\r\n")
   write_bulk(io, "HSET")
   write_bulk(io, hash_name)
   write_bulk(io, identifier)
-  write_bulk(io, extension)
+  write_bulk(io, value)
 end
 
 def redis_command(options, *args)
@@ -185,11 +200,38 @@ def iter_couch_rows(database_url, options)
   end
 end
 
+def iter_source_path_rows(database_url, options)
+  SOURCE_PATH_FALLBACK_KEYS.each do |fallback_key|
+    params = {
+      "reduce" => "false",
+      "include_docs" => "true",
+      "limit" => options[:page_size].to_s,
+      "key" => JSON.generate(fallback_key)
+    }
+
+    loop do
+      body = request_json(view_uri(database_url, options[:view_name], params), options[:timeout])
+      rows = body.fetch("rows", [])
+      break if rows.empty?
+
+      rows.each { |row| yield row }
+      break if rows.length < options[:page_size]
+
+      last = rows.last
+      params.delete("key")
+      params["startkey"] = JSON.generate(fallback_key)
+      params["endkey"] = JSON.generate(fallback_key)
+      params["startkey_docid"] = last["id"].to_s
+      params["skip"] = "1"
+    end
+  end
+end
+
 def parse_args
   load_env_file(ENV.fetch("COUCH_ENV_FILE", default_env_file))
 
   options = {
-    couch_url: ENV["CANVAS_DB"],
+    couch_url: nil,
     db_user: ENV["DB_USER"],
     db_password: ENV["DB_PASSWORD"],
     db_url: ENV["DB_URL"],
@@ -205,13 +247,14 @@ def parse_args
   }
 
   parser = OptionParser.new do |opts|
-    opts.banner = "Usage: populate-redis-from-couch [options] [REDIS_HASH]"
+    opts.banner = "Usage: populate-redis-from-couch [options] [EXTENSION_REDIS_HASH] [SOURCE_PATH_REDIS_HASH]"
     opts.on("--couch-url URL") { |value| options[:couch_url] = value }
     opts.on("--db-user USER") { |value| options[:db_user] = value }
     opts.on("--db-password PASSWORD") { |value| options[:db_password] = value }
     opts.on("--db-url HOST[:PORT]") { |value| options[:db_url] = value }
     opts.on("--db-name NAME") { |value| options[:db_name] = value }
     opts.on("--view-name DESIGN/VIEW") { |value| options[:view_name] = value }
+    opts.on("--source-path-hash NAME") { |value| options[:source_path_hash_name] = value }
     opts.on("--page-size N", Integer) { |value| options[:page_size] = value }
     opts.on("--progress-interval N", Integer) { |value| options[:progress_interval] = value }
     opts.on("--limit N", Integer) { |value| options[:limit] = value }
@@ -221,6 +264,11 @@ def parse_args
   end
   parser.parse!
   options[:hash_name] = ARGV.shift || ENV["IMAGE_EXTENSIONS_REDIS_HASH"] || DEFAULT_HASH_NAME
+  options[:source_path_hash_name] =
+    ARGV.shift ||
+    options[:source_path_hash_name] ||
+    ENV["IMAGE_SOURCE_PATHS_REDIS_HASH"] ||
+    DEFAULT_SOURCE_PATH_HASH_NAME
   options
 end
 
@@ -228,10 +276,12 @@ def main
   options = parse_args
   database_url = couch_database_url(options)
   target_hash = options[:hash_name]
+  source_path_hash = options[:source_path_hash_name]
   load_hash = "#{target_hash}:loading"
+  load_source_path_hash = "#{source_path_hash}:loading"
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-  redis_command(options, "DEL", load_hash)
+  redis_command(options, "DEL", load_hash, load_source_path_hash)
 
   inserted = 0
   redis_pipe(options) do |pipe|
@@ -252,9 +302,28 @@ def main
 
   raise "No rows were loaded from CouchDB" if inserted.zero?
 
+  source_paths_inserted = 0
+  redis_pipe(options) do |pipe|
+    iter_source_path_rows(database_url, options) do |row|
+      identifier = row["id"]
+      source_path = source_path_from_doc(row["doc"])
+      next unless identifier && source_path
+
+      write_hset(pipe, load_source_path_hash, identifier, source_path)
+      source_paths_inserted += 1
+    end
+  end
+
   redis_command(options, "RENAME", load_hash, target_hash)
+  if source_paths_inserted.positive?
+    redis_command(options, "RENAME", load_source_path_hash, source_path_hash)
+  else
+    redis_command(options, "DEL", load_source_path_hash, source_path_hash)
+  end
+
   elapsed = [Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, 0.001].max
   warn "Loaded #{inserted} rows in #{elapsed.round(1)}s (#{(inserted / elapsed).round}/s)"
+  warn "Loaded #{source_paths_inserted} preservation source-path fallback rows into #{source_path_hash}"
   puts redis_command(options, "HLEN", target_hash)
 end
 

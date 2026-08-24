@@ -131,16 +131,25 @@ class CustomDelegate
   DEFAULT_EXTENSION = "jpg"
   MISSING_EXTENSIONS = ["", "none", "null", "nil"].freeze
   EXTENSION_CACHE_MAX_ENTRIES = ENV.fetch("IMAGE_EXTENSIONS_CACHE_SIZE", "50000").to_i
+  SOURCE_PATH_CACHE_MAX_ENTRIES = ENV.fetch("IMAGE_SOURCE_PATHS_CACHE_SIZE", EXTENSION_CACHE_MAX_ENTRIES.to_s).to_i
   IMAGE_EXTENSIONS_REDIS_URL = ENV["IMAGE_EXTENSIONS_REDIS_URL"].to_s
   IMAGE_EXTENSIONS_REDIS_HASH = ENV.fetch("IMAGE_EXTENSIONS_REDIS_HASH", "image_extensions")
+  IMAGE_SOURCE_PATHS_REDIS_HASH = ENV.fetch("IMAGE_SOURCE_PATHS_REDIS_HASH", "image_source_paths")
   EXTENSION_REDIS_POOL_SIZE = ENV.fetch("IMAGE_EXTENSIONS_REDIS_POOL_SIZE", "64").to_i
   EXTENSION_REDIS_TIMEOUT_SECONDS = ENV.fetch("IMAGE_EXTENSIONS_REDIS_TIMEOUT_SECONDS", "0.5").to_f
   EXTENSION_REDIS_BACKOFF_SECONDS = ENV.fetch("IMAGE_EXTENSIONS_REDIS_BACKOFF_SECONDS", "10").to_f
+  PRESERVATION_BUCKET_ENV_NAMES = [
+    "S3SOURCE_PRESERVATION_BUCKET_NAME",
+    "S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME"
+  ].freeze
   CACHE_MISS = Object.new.freeze
   REDIS_UNAVAILABLE = Object.new.freeze
   @@extension_cache = {}
   @@extension_cache_fingerprint = nil
   @@extension_cache_mutex = Mutex.new
+  @@source_path_cache = {}
+  @@source_path_cache_fingerprint = nil
+  @@source_path_cache_mutex = Mutex.new
   @@extension_redis_pool = []
   @@extension_redis_pool_open_count = 0
   @@extension_redis_pool_mutex = Mutex.new
@@ -154,15 +163,35 @@ class CustomDelegate
   def canvas
     return @canvas if @canvas
 
-    container_name = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"]
-    identifier = context["identifier"]
+    access_container_name = ENV["S3SOURCE_ACCESSFILES_BUCKET_NAME"].to_s
+    identifier = context["identifier"].to_s
 
-    return nil unless container_name && identifier
+    return nil if identifier.empty?
 
-    filename = swift_filename(container_name, identifier)
+    extension = extension_from_index(identifier)
+    if extension && !access_container_name.empty?
+      @canvas = access_canvas(access_container_name, identifier, extension)
+      return @canvas
+    end
 
-    @canvas = {
-      "filename" => filename,
+    source_path = source_path_from_index(identifier)
+    preservation_container = preservation_container_name
+    if source_path && !preservation_container.empty?
+      @canvas = {
+        "filename" => source_path,
+        "source"   => preservation_container
+      }
+      return @canvas
+    end
+
+    return nil if access_container_name.empty?
+
+    @canvas = access_canvas(access_container_name, identifier, DEFAULT_EXTENSION)
+  end
+
+  def access_canvas(container_name, identifier, extension)
+    {
+      "filename" => "#{identifier}.#{extension}",
       "source"   => container_name
     }
   end
@@ -173,6 +202,15 @@ class CustomDelegate
 
   def extension_for(identifier)
     extension_from_index(identifier) || DEFAULT_EXTENSION
+  end
+
+  def preservation_container_name
+    PRESERVATION_BUCKET_ENV_NAMES.each do |env_name|
+      container_name = ENV[env_name].to_s.strip
+      return container_name unless container_name.empty?
+    end
+
+    ""
   end
 
   def extension_from_index(identifier)
@@ -190,8 +228,27 @@ class CustomDelegate
     extension
   end
 
+  def source_path_from_index(identifier)
+    return nil unless redis_enabled?
+
+    fingerprint = source_path_index_fingerprint
+    cached = source_path_cache_get(identifier, fingerprint)
+    return nil if cached.equal?(CACHE_MISS)
+    return cached if cached
+
+    source_path = source_path_from_redis(identifier)
+    return nil if source_path.equal?(REDIS_UNAVAILABLE)
+
+    source_path_cache_put(identifier, source_path || CACHE_MISS, fingerprint)
+    source_path
+  end
+
   def extension_index_fingerprint
     ["redis", IMAGE_EXTENSIONS_REDIS_URL, IMAGE_EXTENSIONS_REDIS_HASH]
+  end
+
+  def source_path_index_fingerprint
+    ["redis", IMAGE_EXTENSIONS_REDIS_URL, IMAGE_SOURCE_PATHS_REDIS_HASH]
   end
 
   def extension_from_redis(identifier)
@@ -201,6 +258,23 @@ class CustomDelegate
     begin
       client = checkout_extension_redis_client
       normalize_extension(client.hget(IMAGE_EXTENSIONS_REDIS_HASH, identifier))
+    rescue StandardError => e
+      discard_extension_redis_client(client)
+      client = nil
+      disable_extension_redis(e)
+      REDIS_UNAVAILABLE
+    ensure
+      checkin_extension_redis_client(client) if client
+    end
+  end
+
+  def source_path_from_redis(identifier)
+    return REDIS_UNAVAILABLE unless redis_enabled?
+
+    client = nil
+    begin
+      client = checkout_extension_redis_client
+      normalize_source_path(client.hget(IMAGE_SOURCE_PATHS_REDIS_HASH, identifier))
     rescue StandardError => e
       discard_extension_redis_client(client)
       client = nil
@@ -320,9 +394,49 @@ class CustomDelegate
     @@extension_cache_fingerprint = fingerprint
   end
 
+  def source_path_cache_get(identifier, fingerprint)
+    return nil unless source_path_cache_enabled?
+
+    @@source_path_cache_mutex.synchronize do
+      reset_source_path_cache_if_needed(fingerprint)
+      value = @@source_path_cache.delete(identifier)
+      @@source_path_cache[identifier] = value if value
+      value
+    end
+  end
+
+  def source_path_cache_put(identifier, value, fingerprint)
+    return unless source_path_cache_enabled?
+
+    @@source_path_cache_mutex.synchronize do
+      reset_source_path_cache_if_needed(fingerprint)
+      @@source_path_cache.delete(identifier)
+      @@source_path_cache[identifier] = value
+      @@source_path_cache.shift while @@source_path_cache.size > SOURCE_PATH_CACHE_MAX_ENTRIES
+    end
+  end
+
+  def source_path_cache_enabled?
+    SOURCE_PATH_CACHE_MAX_ENTRIES.positive?
+  end
+
+  def reset_source_path_cache_if_needed(fingerprint)
+    return if @@source_path_cache_fingerprint == fingerprint
+
+    @@source_path_cache.clear
+    @@source_path_cache_fingerprint = fingerprint
+  end
+
   def normalize_extension(extension)
     normalized = extension.to_s.strip.sub(/\A\./, "").downcase
     return nil if MISSING_EXTENSIONS.include?(normalized)
+
+    normalized
+  end
+
+  def normalize_source_path(source_path)
+    normalized = source_path.to_s.strip
+    return nil if MISSING_EXTENSIONS.include?(normalized.downcase)
 
     normalized
   end

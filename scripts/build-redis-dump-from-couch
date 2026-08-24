@@ -4,6 +4,7 @@ set -eu
 image="${CANTALOUPE_IMAGE:-cihm-cantaloupe:latest}"
 data_dir="${IMAGE_EXTENSIONS_DATA_DIR:-data}"
 hash_name="${IMAGE_EXTENSIONS_REDIS_HASH:-image_extensions}"
+source_path_hash_name="${IMAGE_SOURCE_PATHS_REDIS_HASH:-image_source_paths}"
 archive="${REDIS_CACHE_ARCHIVE:-dist/redis-cache-data.tar.gz}"
 build_image="${BUILD_IMAGE:-true}"
 env_file="${COUCH_ENV_FILE:-scripts/populate_image_extensions.env}"
@@ -22,7 +23,6 @@ fi
 run_loader() {
     docker run --rm \
         --user "$(id -u):$(id -g)" \
-        -e CANVAS_DB \
         -e DB_USER \
         -e DB_PASSWORD \
         -e DB_URL \
@@ -32,6 +32,7 @@ run_loader() {
         -e COUCH_TIMEOUT_SECONDS \
         -e PROGRESS_INTERVAL \
         -e IMAGE_EXTENSIONS_REDIS_HASH="$hash_name" \
+        -e IMAGE_SOURCE_PATHS_REDIS_HASH="$source_path_hash_name" \
         -v "$data_dir:/data" \
         "$@" \
         --entrypoint /bin/sh \
@@ -60,14 +61,14 @@ run_loader() {
 
             redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null
             redis-cli -h 127.0.0.1 -p 6379 FLUSHDB >/dev/null
-            populate-redis-from-couch "$IMAGE_EXTENSIONS_REDIS_HASH"
+            populate-redis-from-couch "$IMAGE_EXTENSIONS_REDIS_HASH" "$IMAGE_SOURCE_PATHS_REDIS_HASH"
             redis-cli -h 127.0.0.1 -p 6379 SHUTDOWN SAVE >/dev/null || true
             mv -f /data/redis/dump.rdb.loading /data/redis/dump.rdb
             trap - EXIT
         '
 }
 
-echo "Populating Redis hash '$hash_name' from CouchDB into $data_dir/redis"
+echo "Populating Redis hashes '$hash_name' and '$source_path_hash_name' from CouchDB into $data_dir/redis"
 if [ -r "$env_file" ]; then
     env_file="$(cd "$(dirname "$env_file")" && pwd)/$(basename "$env_file")"
     run_loader -e COUCH_ENV_FILE=/tmp/couch.env -v "$env_file:/tmp/couch.env:ro"

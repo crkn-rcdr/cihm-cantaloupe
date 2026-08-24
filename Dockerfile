@@ -1,9 +1,9 @@
-FROM alpine:3.19
+FROM alpine:3.24
 
 WORKDIR /tmp
 
 # ---- Environment ----
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
+ENV JAVA_HOME=/usr/lib/jvm/java-25-openjdk \
     GEM_HOME=/tmp/gems \
     PATH=/usr/local/bin:/root/.local/bin:$PATH
 
@@ -12,7 +12,7 @@ RUN set -eux; \
     for i in 1 2 3 4 5; do \
         apk update \
         && apk add \
-            openjdk17-jdk \
+            openjdk25-jdk \
             wget \
             unzip \
             openjpeg-tools \
@@ -57,6 +57,7 @@ RUN set -eux; \
         -DCMAKE_INSTALL_LIBDIR=/usr/lib \
         -DBUILD_SHARED_LIBS=True \
         -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
         -DWITH_JAVA=1 \
  && make \
  && make install \

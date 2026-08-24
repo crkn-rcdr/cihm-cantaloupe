@@ -6,36 +6,37 @@ services:
         ipv4_address: 172.30.0.5
     volumes:
       - /data/cantaloupe:/data
+    restart: unless-stopped
+    # This file may be used directly by deploy/build tooling without the
+    # ignored local override file, so production runtime defaults live here.
     environment:
+      # Allows bundled JRuby/JFFI native access on Java 25 without startup noise.
+      JDK_JAVA_OPTIONS: "--enable-native-access=ALL-UNNAMED"
+      # Initial production heap for high-memory Cantaloupe hosts; tune from real load.
+      JAVA_TOOL_OPTIONS: "-Xms16g -Xmx64g -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
+      SOURCE_STATIC: S3Source
+      S3SOURCE_ENDPOINT: https://swift-tor.canadiana.ca
+      S3SOURCE_ACCESSFILES_BUCKET_NAME: access-files
+      # Embedded Redis maps identifiers to master extensions and legacy source paths.
       IMAGE_EXTENSIONS_REDIS_URL: redis://127.0.0.1:6379/0
       IMAGE_EXTENSIONS_REDIS_HASH: image_extensions
+      IMAGE_SOURCE_PATHS_REDIS_HASH: image_source_paths
       IMAGE_EXTENSIONS_REDIS_DIR: /data/redis
       IMAGE_EXTENSIONS_REDIS_PRELOAD: "true"
-    #ports:
-    #  - "8182:8182"
-    # environment:
-    # - SOURCE_STATIC=S3Source (for Swift)
-    # - SOURCE_STATIC=FilesystemSource (for ZFS)
-    # - REPOSITORY_BASE=/path/to/repository (for ZFS)
-    # - S3SOURCE_ENDPOINT=https://swifts3.endpoint/
-    # - S3SOURCE_ACCESS_KEY_ID=swiftuser
-    # - S3SOURCE_SECRET_KEY=swifts3secret
-    # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME=test
-    # - S3SOURCE_ACCESSFILES_BUCKET_NAME: test-access-files
-    # - CANVAS_DB=http://couch.domain/canvas (do not add a trailing slash)
-    # - CAP_JWT_SECRET=capjwtsecret
-    # - AUTH_JWT_SECRET=authjwtsecret
-    # - SWIFT_AUTH_URL=
-    # - SWIFT_USERNAME=
-    # - SWIFT_PASSWORD=
-    # - SWIFT_TENNANT=
-
-    # Use the following with openstackswift/saio in development
-    # - S3SOURCE_ENDPOINT: http://172.30.0.54:8080
-    # - S3SOURCE_ACCESS_KEY_ID: <swift-access-key-id>
-    # - S3SOURCE_SECRET_KEY: <swift-secret-key>
-    # - S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME: preservation-cihm-aip
-    # - S3SOURCE_ACCESSFILES_BUCKET_NAME: access-files
+      IMAGE_EXTENSIONS_CACHE_SIZE: "50000"
+      IMAGE_SOURCE_PATHS_CACHE_SIZE: "50000"
+      IMAGE_EXTENSIONS_REDIS_POOL_SIZE: "64"
+      CANTALOUPE_PURGE_ZERO_BYTE_CACHE: "true"
+      # Used only for legacy rows whose source image never made it to access-files.
+      S3SOURCE_PRESERVATION_BUCKET_NAME: preservation-cihm-aip
+      ENDPOINT_API_ENABLED: "true"
+    # Lightweight container health check; Cantaloupe dependency checks are disabled.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8182/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 networks:
   access-platform:
     external: true

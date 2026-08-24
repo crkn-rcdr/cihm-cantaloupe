@@ -6,32 +6,40 @@
 
 Expected environment variables can be found in `docker-compose.yml`. Note the use of the `SOURCE_STATIC` variable to choose between `HttpSource` (for Swift preauth URLs), `S3Source`, and `FilesystemSource` (for ZFS).
 
-For Swift access-file extension lookup, the delegate checks an embedded Redis
-hash loaded from:
+For Swift object lookup, the delegate checks embedded Redis hashes loaded from:
 
 ```
 /data/redis/dump.rdb
 ```
 
-The Redis hash maps each canvas identifier to its master image extension. It
-stores every real extension emitted by the CouchDB view, including `jpg`, `jp2`,
-and `tif`; sentinel values such as `none` are treated as missing extensions.
+The primary Redis hash maps each canvas identifier to its master image
+extension. It stores every real extension emitted by the CouchDB view, including
+`jpg`, `jp2`, and `tif`; sentinel values such as `none` are treated as missing
+extensions.
 
-## Redis Extension Index
+A second Redis hash maps legacy identifiers with no usable master extension to
+their CouchDB `source.path`. Those rows are routed to the preservation bucket.
+This restores the old preservation fallback without reintroducing per-request
+CouchDB lookups or Swift existence probes.
+
+## Redis Image Lookup Indexes
 
 The compose files mount `./data` into the container and set:
 
 ```text
 IMAGE_EXTENSIONS_REDIS_URL=redis://127.0.0.1:6379/0
 IMAGE_EXTENSIONS_REDIS_HASH=image_extensions
+IMAGE_SOURCE_PATHS_REDIS_HASH=image_source_paths
 IMAGE_EXTENSIONS_REDIS_DIR=/data/redis
 IMAGE_EXTENSIONS_REDIS_PRELOAD=true
+S3SOURCE_PRESERVATION_BUCKET_NAME=preservation-cihm-aip
 ```
 
 Optional runtime tuning variables:
 
 ```text
 IMAGE_EXTENSIONS_CACHE_SIZE=50000
+IMAGE_SOURCE_PATHS_CACHE_SIZE=50000
 IMAGE_EXTENSIONS_REDIS_POOL_SIZE=64
 IMAGE_EXTENSIONS_REDIS_TIMEOUT_SECONDS=0.5
 IMAGE_EXTENSIONS_REDIS_BACKOFF_SECONDS=10
@@ -39,9 +47,26 @@ IMAGE_EXTENSIONS_REDIS_STARTUP_TIMEOUT_SECONDS=300
 ```
 
 `IMAGE_EXTENSIONS_CACHE_SIZE` controls the in-process LRU cache for repeated
-identifier lookups. Redis is checked using `HGET IMAGE_EXTENSIONS_REDIS_HASH
-identifier`. If Redis is unavailable or a row is missing, the delegate falls
-back to `.jpg`.
+extension lookups. `IMAGE_SOURCE_PATHS_CACHE_SIZE` defaults to the same value
+and controls repeated legacy source-path lookups. Redis is checked using:
+
+```text
+HGET IMAGE_EXTENSIONS_REDIS_HASH identifier
+HGET IMAGE_SOURCE_PATHS_REDIS_HASH identifier
+```
+
+The delegate resolution order is:
+
+1. If the extension hash has a real extension, use the access-files bucket and
+   `<identifier>.<extension>`.
+2. If the extension is missing and the source-path hash has a path, use the
+   preservation bucket and that stored `source.path`.
+3. If neither Redis lookup resolves the image, fall back to access-files
+   `<identifier>.jpg`.
+
+For compatibility with the old Platform 1.0 config,
+`S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME` is also accepted as the preservation
+bucket name when `S3SOURCE_PRESERVATION_BUCKET_NAME` is not set.
 
 Redis runs inside the Cantaloupe container and stores its snapshot in the same
 data mount used by the rest of the deployment:
@@ -84,7 +109,7 @@ leave persistent empty JPEG responses in `/data/cache`, and those must be
 purged without throwing away the whole warmed cache.
 
 On startup, `IMAGE_EXTENSIONS_REDIS_PRELOAD=true` populates Redis directly from
-CouchDB only if the Redis hash is empty.
+CouchDB only if the Redis lookup hashes are incomplete.
 
 Build or refresh the Redis dump from CouchDB with:
 
@@ -106,6 +131,8 @@ DB_PASSWORD=
 DB_URL=
 DB_NAME=canvas
 VIEW_NAME=stats/masterext
+IMAGE_EXTENSIONS_REDIS_HASH=image_extensions
+IMAGE_SOURCE_PATHS_REDIS_HASH=image_source_paths
 ```
 
 The builder writes the Redis snapshot:
@@ -162,13 +189,52 @@ warms `full/72,`, `full/144,`, and `full/289,` derivatives as well as
 `127.0.0.1` avoids the public proxy timeout while Cantaloupe is doing cold Swift
 reads and derivative generation.
 
-If an identifier is missing from Redis, the delegate falls back to `.jpg`. For
-JP2/TIFF records, a 404 mentioning a `.jpg` key usually means the running
-Cantaloupe instance cannot see the expected Redis row, is using an old dump, or
-needs to restart after the refreshed dump is installed.
+If an identifier is missing from both Redis hashes, the delegate falls back to
+`.jpg`. For JP2/TIFF records, a 404 mentioning a `.jpg` key usually means the
+running Cantaloupe instance cannot see the expected Redis row, is using an old
+dump, or needs to restart after the refreshed dump is installed. For old records
+whose CouchDB `master.extension` is `none` or missing, a 404 in the access-files
+bucket usually means the `image_source_paths` hash is missing or empty.
+
+## Runtime Tuning
+
+The image runs on Java 25 LTS and relies on `JAVA_TOOL_OPTIONS` for heap and GC
+settings. `JDK_JAVA_OPTIONS=--enable-native-access=ALL-UNNAMED` is also set so
+JRuby/JFFI can use native access without Java 25 startup warnings. The production
+compose profile sets:
+
+```text
+-Xms16g -Xmx64g -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError
+```
+
+The default/local compose profiles use smaller heaps so a developer workstation
+can still start the service. Override `JAVA_TOOL_OPTIONS` in the shell or in the
+Puppet-managed environment file when testing different heap sizes.
+
+Cantaloupe's standalone server is capped at `http.max_threads = 128` with a
+shorter accept queue. This applies back-pressure before the JVM can admit too
+many simultaneous image decodes. The Docker health check calls `/health` with
+dependency checks disabled, so health polling does not read from Swift.
 
 ## Usage
 
 ```
 docker compose build && docker compose -f docker-compose.override.yml up --force-recreate
 ```
+
+
+## Test URLs
+
+Test url:
+
+http://localhost:8182/iiif/2/69429%2Fc0q23qz31412/full/max/0/default.jpg
+
+On server:
+
+https://www-iiif-image.canadiana.ca/iiif/2/69429%2Fc0q23qz31412/full/max/0/default.jpg
+
+VS old urls
+
+https://image-tor.canadiana.ca/iiif/2/69429%2Fc0q23qz31412/full/max/0/default.jpg
+
+https://image-uab.canadiana.ca/iiif/2/69429%2Fc0q23qz31412/full/max/0/default.jpg
