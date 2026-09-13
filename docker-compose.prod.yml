@@ -17,12 +17,10 @@ services:
       SOURCE_STATIC: S3Source
       S3SOURCE_ENDPOINT: https://swift-tor.canadiana.ca
       S3SOURCE_ACCESSFILES_BUCKET_NAME: access-files
-      # Embedded Redis maps identifiers to master extensions and legacy source paths.
-      IMAGE_EXTENSIONS_REDIS_URL: redis://127.0.0.1:6379/0
+      # Stack Redis maps identifiers to master extensions and legacy source paths.
+      IMAGE_EXTENSIONS_REDIS_URL: redis://redis:6379/0
       IMAGE_EXTENSIONS_REDIS_HASH: image_extensions
       IMAGE_SOURCE_PATHS_REDIS_HASH: image_source_paths
-      IMAGE_EXTENSIONS_REDIS_DIR: /data/redis
-      IMAGE_EXTENSIONS_REDIS_PRELOAD: "true"
       IMAGE_EXTENSIONS_CACHE_SIZE: "50000"
       IMAGE_SOURCE_PATHS_CACHE_SIZE: "50000"
       IMAGE_EXTENSIONS_REDIS_POOL_SIZE: "64"

@@ -1,21 +1,23 @@
 #!/bin/sh
 set -eu
 
-start_redis() {
-    redis_dir="${IMAGE_EXTENSIONS_REDIS_DIR:-/data/redis}"
-    mkdir -p "$redis_dir"
-    echo "Starting embedded Redis extension index in $redis_dir"
+wait_for_redis() {
+    timeout="${IMAGE_EXTENSIONS_REDIS_STARTUP_TIMEOUT_SECONDS:-30}"
+    deadline="$(($(date +%s) + timeout))"
+    last_response=""
 
-    redis-server \
-        --bind 127.0.0.1 \
-        --port 6379 \
-        --dir "$redis_dir" \
-        --dbfilename dump.rdb \
-        --save 900 1 \
-        --appendonly no \
-        --daemonize yes
+    echo "Connecting to Redis at $IMAGE_EXTENSIONS_REDIS_URL (timeout: ${timeout}s)..."
+    while [ "$(date +%s)" -le "$deadline" ]; do
+        last_response="$(redis-cli -u "$IMAGE_EXTENSIONS_REDIS_URL" ping 2>&1 || true)"
+        if [ "$last_response" = "PONG" ]; then
+            echo "Connected to Redis: PONG"
+            return 0
+        fi
+        sleep 1
+    done
 
-    wait_for_redis
+    echo "Could not connect to Redis at $IMAGE_EXTENSIONS_REDIS_URL within ${timeout}s. Last response: $last_response" >&2
+    return 1
 }
 
 prepare_cantaloupe_cache() {
@@ -67,53 +69,8 @@ print_runtime_diagnostics() {
     grep -n "def httpsource_resource_info" /etc/delegates.rb || true
 }
 
-wait_for_redis() {
-    timeout="${IMAGE_EXTENSIONS_REDIS_STARTUP_TIMEOUT_SECONDS:-300}"
-    deadline="$(($(date +%s) + timeout))"
-    last_response=""
-
-    while [ "$(date +%s)" -le "$deadline" ]; do
-        last_response="$(redis-cli -h 127.0.0.1 -p 6379 ping 2>&1 || true)"
-        if [ "$last_response" = "PONG" ]; then
-            return 0
-        fi
-        sleep 1
-    done
-
-    echo "Redis did not start within ${timeout}s. Last response: $last_response" >&2
-    return 1
-}
-
-preload_redis() {
-    preload="${IMAGE_EXTENSIONS_REDIS_PRELOAD:-true}"
-    [ "$preload" = "true" ] || return 0
-
-    hash_name="${IMAGE_EXTENSIONS_REDIS_HASH:-image_extensions}"
-    source_path_hash_name="${IMAGE_SOURCE_PATHS_REDIS_HASH:-image_source_paths}"
-
-    existing="$(redis-cli -h 127.0.0.1 -p 6379 HLEN "$hash_name")"
-    existing_source_paths="$(redis-cli -h 127.0.0.1 -p 6379 HLEN "$source_path_hash_name")"
-    if [ "$existing" != "0" ] && [ "$existing_source_paths" != "0" ]; then
-        echo "Redis extension index already contains $existing rows"
-        echo "Redis source-path fallback index already contains $existing_source_paths rows"
-        return 0
-    fi
-
-    if [ -z "${DB_URL:-}" ]; then
-        echo "Redis extension/source-path index is incomplete and no CouchDB source is configured"
-        echo "  $hash_name rows: $existing"
-        echo "  $source_path_hash_name rows: $existing_source_paths"
-        return 0
-    fi
-
-    echo "Loading Redis extension and source-path fallback indexes from CouchDB"
-    populate-redis-from-couch "$hash_name" "$source_path_hash_name"
-    redis-cli -h 127.0.0.1 -p 6379 SAVE >/dev/null
-}
-
 if [ -n "${IMAGE_EXTENSIONS_REDIS_URL:-}" ]; then
-    start_redis
-    preload_redis
+    wait_for_redis
 else
     echo "IMAGE_EXTENSIONS_REDIS_URL is not set; Redis extension index disabled"
 fi

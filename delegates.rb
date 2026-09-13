@@ -158,7 +158,7 @@ class CustomDelegate
   @@extension_redis_last_error_logged_at = 0.0
 
   #
-  # Canvas lookup (unchanged logic, safer handling)
+  # Canvas lookup
   #
   def canvas
     return @canvas if @canvas
@@ -496,6 +496,12 @@ class CustomDelegate
   # Authorization hook
   #
   def pre_authorize(options = {})
+    uri = context["request_uri"].to_s
+    return true if uri.start_with?("/health")
+
+    identifier = context["identifier"].to_s
+    return true if identifier.empty?
+
     authorize(options)
   end
 

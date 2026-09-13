@@ -98,12 +98,10 @@ COPY --chown=cantaloupe:cantaloupe \
     /etc/
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY scripts/populate-redis-from-couch /usr/local/bin/populate-redis-from-couch
 COPY scripts/warm_manifest_info_cache.py /usr/local/bin/warm-manifest-info-cache
 
 RUN chmod +x \
         /usr/local/bin/docker-entrypoint.sh \
-        /usr/local/bin/populate-redis-from-couch \
         /usr/local/bin/warm-manifest-info-cache
 
 # ---- Sudo permissions ----

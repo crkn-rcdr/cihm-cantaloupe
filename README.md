@@ -6,11 +6,7 @@
 
 Expected environment variables can be found in `docker-compose.yml`. Note the use of the `SOURCE_STATIC` variable to choose between `HttpSource` (for Swift preauth URLs), `S3Source`, and `FilesystemSource` (for ZFS).
 
-For Swift object lookup, the delegate checks embedded Redis hashes loaded from:
-
-```
-/data/redis/dump.rdb
-```
+For Swift object lookup, the delegate checks external Redis hashes.
 
 The primary Redis hash maps each canvas identifier to its master image
 extension. It stores every real extension emitted by the CouchDB view, including
@@ -24,14 +20,12 @@ CouchDB lookups or Swift existence probes.
 
 ## Redis Image Lookup Indexes
 
-The compose files mount `./data` into the container and set:
+The compose files set:
 
 ```text
-IMAGE_EXTENSIONS_REDIS_URL=redis://127.0.0.1:6379/0
+IMAGE_EXTENSIONS_REDIS_URL=redis://redis:6379/0
 IMAGE_EXTENSIONS_REDIS_HASH=image_extensions
 IMAGE_SOURCE_PATHS_REDIS_HASH=image_source_paths
-IMAGE_EXTENSIONS_REDIS_DIR=/data/redis
-IMAGE_EXTENSIONS_REDIS_PRELOAD=true
 S3SOURCE_PRESERVATION_BUCKET_NAME=preservation-cihm-aip
 ```
 
@@ -43,7 +37,7 @@ IMAGE_SOURCE_PATHS_CACHE_SIZE=50000
 IMAGE_EXTENSIONS_REDIS_POOL_SIZE=64
 IMAGE_EXTENSIONS_REDIS_TIMEOUT_SECONDS=0.5
 IMAGE_EXTENSIONS_REDIS_BACKOFF_SECONDS=10
-IMAGE_EXTENSIONS_REDIS_STARTUP_TIMEOUT_SECONDS=300
+IMAGE_EXTENSIONS_REDIS_STARTUP_TIMEOUT_SECONDS=30
 ```
 
 `IMAGE_EXTENSIONS_CACHE_SIZE` controls the in-process LRU cache for repeated
@@ -68,23 +62,20 @@ For compatibility with the old Platform 1.0 config,
 `S3SOURCE_BASICLOOKUPSTRATEGY_BUCKET_NAME` is also accepted as the preservation
 bucket name when `S3SOURCE_PRESERVATION_BUCKET_NAME` is not set.
 
-Redis runs inside the Cantaloupe container and stores its snapshot in the same
-data mount used by the rest of the deployment:
+Redis is hosted externally (e.g. as a separate container or shared service).
+The Redis hashes are populated upstream via Windmill (`populate_download_cache.py`).
+On container startup, `docker-entrypoint.sh` connects to `IMAGE_EXTENSIONS_REDIS_URL`
+before launching Cantaloupe.
 
-```text
-/data/redis/dump.rdb
-```
-
-Cantaloupe's source and derivative filesystem cache also lives in that same data
-mount:
+Cantaloupe's source and derivative filesystem cache lives in:
 
 ```text
 /data/cache
 ```
 
-Keep this directory between container rebuilds/restarts. It is not part of the
-Redis dump archive; it fills at runtime and prevents repeated cold reads from
-Swift for images Cantaloupe has already processed.
+Keep this directory between container rebuilds/restarts. It fills at runtime
+and prevents repeated cold reads from Swift for images Cantaloupe has already
+processed.
 
 On the Puppet-managed beta host, `/data/cache` is backed by the existing
 `/var/cache/cantaloupe` LVM mount.
@@ -107,66 +98,6 @@ The entrypoint removes zero-byte derivative/info cache files once per mounted
 cache by default. This is intentional: earlier bad source/processor settings can
 leave persistent empty JPEG responses in `/data/cache`, and those must be
 purged without throwing away the whole warmed cache.
-
-On startup, `IMAGE_EXTENSIONS_REDIS_PRELOAD=true` populates Redis directly from
-CouchDB only if the Redis lookup hashes are incomplete.
-
-Build or refresh the Redis dump from CouchDB with:
-
-```
-scripts/build-redis-dump-from-couch
-```
-
-The script loads CouchDB connection settings from an ignored local dotenv file:
-
-```
-scripts/populate_image_extensions.env
-```
-
-That file should contain:
-
-```text
-DB_USER=
-DB_PASSWORD=
-DB_URL=
-DB_NAME=canvas
-VIEW_NAME=stats/masterext
-IMAGE_EXTENSIONS_REDIS_HASH=image_extensions
-IMAGE_SOURCE_PATHS_REDIS_HASH=image_source_paths
-```
-
-The builder writes the Redis snapshot:
-
-```text
-data/redis/dump.rdb
-```
-
-It also writes an uploadable archive:
-
-```text
-dist/redis-cache-data.tar.gz
-```
-
-Upload that archive to the host server, then extract it into the production data
-directory before starting Cantaloupe:
-
-```
-sudo tar -xzf redis-cache-data.tar.gz -C /data/cantaloupe
-sudo mkdir -p /data/cantaloupe/cache
-sudo chown -R 8182:8182 /data/cantaloupe/redis /data/cantaloupe/cache
-```
-
-That creates `/data/cantaloupe/redis/dump.rdb`. The production compose file
-mounts `/data/cantaloupe` as `/data`, so Cantaloupe starts with Redis already
-loaded and skips the CouchDB preload. `/data/cantaloupe/cache` is the persistent
-Cantaloupe filesystem cache.
-
-For the Puppet-managed beta compose, `/var/cache/cantaloupe` is mounted as
-`/data/cache`; make sure that host directory is owned by the Cantaloupe user:
-
-```
-sudo chown -R 8182:8182 /data/cantaloupe/redis /var/cache/cantaloupe
-```
 
 ## Warming Large Manifests
 
