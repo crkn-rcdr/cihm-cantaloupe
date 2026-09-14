@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+export AWS_EC2_METADATA_DISABLED=true
+export AWS_REGION=us-east-1
 
 wait_for_redis() {
     timeout="${IMAGE_EXTENSIONS_REDIS_STARTUP_TIMEOUT_SECONDS:-30}"
