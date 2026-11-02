@@ -14,3 +14,13 @@ jai-1_1_2_01-lib-linux-i586.tar.gz
 docker-compose.dev.yml
 docker-compose.prod.yml
 docker-compose.yml
+
+# Local environments
+.env
+.env.*
+!.env.example
+
+# Secret keys and certs
+*.key
+*.p12
+*.pfx
